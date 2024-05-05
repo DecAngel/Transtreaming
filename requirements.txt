@@ -1,8 +1,12 @@
+# Check environment.yaml first, recommend using conda to install these requirements.
+# Uncomment ## if you don't use conda.
+# Uncomment ### if you want to install optional dependencies (loggers)
+
 # --------- pytorch --------- #
-torch>=2.0.0
-torchvision>=0.15.0
-lightning>=2.0.0
-torchmetrics>=0.11.4
+##torch>=2.0.0
+##torchvision>=0.15.0
+##lightning>=2.0.0
+##torchmetrics>=0.11.4
 
 # --------- hydra --------- #
 hydra-core==1.3.2
@@ -10,15 +14,26 @@ hydra-colorlog==1.2.0
 hydra-optuna-sweeper==1.2.0
 
 # --------- loggers --------- #
-# wandb
-# neptune-client
-# mlflow
-# comet-ml
-# aim>=3.16.2  # no lower than 3.16.2, see https://github.com/aimhubio/aim/issues/2550
+###wandb
+###neptune-client
+###mlflow
+###comet-ml
+###aim>=3.16.2  # no lower than 3.16.2, see https://github.com/aimhubio/aim/issues/2550
 
 # --------- others --------- #
 rootutils       # standardizing the project root setup
-pre-commit      # hooks for applying linters on commit
-rich            # beautiful text formatting in terminal
-pytest          # tests
-# sh            # for running bash commands in some tests (linux/macos only)
+##pre-commit      # hooks for applying linters on commit
+##rich            # beautiful text formatting in terminal
+##pytest          # tests
+sh; sys_platform == 'linux'                 # for running bash commands in some tests (linux/macos only)
+
+# --------- TRAQue specific --------- #
+tensordict      # input data structure
+torchdata       # for datapipes
+kornia          # for data augmentations on gpu
+jaxtyping       # for typing annotation on tensors
+typeguard==3.0.2                            # type checking
+pywin32; sys_platform == 'win32'            # for getting os resource info
+pycocotools     # for loading COCO jsons
+sap_toolkit     # for sap testing
+ninja           # for compiling optimized cocoeval

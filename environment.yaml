@@ -5,9 +5,10 @@
 # - conda allows for installing packages without requiring certain compilers or
 #   libraries to be available in the system, since it installs precompiled binaries
 
-name: myenv
+name: traque
 
 channels:
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
   - pytorch
   - conda-forge
   - defaults
@@ -26,7 +27,6 @@ dependencies:
   - torchvision=0.*
   - lightning=2.*
   - torchmetrics=0.*
-  - hydra-core=1.*
   - rich=13.*
   - pre-commit=3.*
   - pytest=7.*
@@ -40,6 +40,4 @@ dependencies:
 
   - pip>=23
   - pip:
-      - hydra-optuna-sweeper
-      - hydra-colorlog
-      - rootutils
+      - -r requirements.txt

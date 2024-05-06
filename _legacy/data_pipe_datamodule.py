@@ -1,17 +1,10 @@
-import functools
-from pathlib import Path
-from typing import Tuple, Union, List, Sequence, Optional, SupportsIndex, Dict
-import itertools
-import mmap
-from collections import deque
+from typing import Tuple, Optional, Dict
 
-import torch
 import lightning as L
-from lightning.pytorch.utilities.types import EVAL_DATALOADERS
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
-from .components.td_space import TensorDictSpace, NSMTensorDictSpace
-from .components.data_pipes.base import DataPipe, DataPipe2Dataset
+from src.datamodules.components.data_spaces.nsm_space import TensorDictSpace
+from src._legacy.data_pipes.base import DataPipe, DataPipe2Dataset
 
 
 class DataPipeDataModule(L.LightningDataModule):

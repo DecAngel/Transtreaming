@@ -1,0 +1,48 @@
+_target_: src.data.data_pipe_datamodule.DataPipeDataModule
+data_pipes:
+  train_source:
+    - _target_: src.data.components.data_pipes.argoverse.ArgoverseDataPipe
+      img_dir: ${paths.data_dir}/argoverse/Argoverse-1.1/tracking
+      ann_file: ${paths.data_dir}/argoverse/Argoverse-HD/annotations/train.json
+      cache: True
+  val_source:
+    - _target_: src.data.components.data_pipes.argoverse.ArgoverseDataPipe
+      img_dir: ${paths.data_dir}/argoverse/Argoverse-1.1/tracking
+      ann_file: ${paths.data_dir}/argoverse/Argoverse-HD/annotations/val.json
+      cache: True
+  test_source:
+    - _target_: src.data.components.data_pipes.argoverse.ArgoverseDataPipe
+      img_dir: ${paths.data_dir}/argoverse/Argoverse-1.1/tracking
+      ann_file: ${paths.data_dir}/argoverse/Argoverse-HD/annotations/val.json
+      cache: True
+  train:
+    - _target_: src.data.components.data_pipes.video_source.VideoClipperDataPipe
+      component_indices:
+        0: [0]
+        1: [-3, -2, -1, 0]
+        2: [0, 1]
+      interval: 1
+    - train_source
+  val:
+    - _target_: src.data.components.data_pipes.video_source.VideoClipperDataPipe
+      component_indices:
+        0: [0]
+        1: [ -3, -2, -1, 0 ]
+        2: [ 0, 1 ]
+      interval: 1
+    - val_source
+  test:
+    - _target_: src.data.components.data_pipes.video_source.VideoClipperDataPipe
+      component_indices:
+        0: [0]
+        1: [ -3, -2, -1, 0 ]
+        2: [ 0, 1 ]
+      interval: 1
+    - test_source
+
+space:
+  _target_: src.data.components.td_space.NSMTensorDictSpace
+  prefix: 'nsmtdm'
+  method: 'default'
+batch_size: 4
+num_workers: 0

@@ -11,7 +11,7 @@ from torchmetrics import Metric
 from src.primitives.batch import (
     BatchDict, MetricDict, LossDict, IMAGE, PYRAMID, TIME,
     COORDINATE, LABEL, PROBABILITY, SCALAR, BBoxDict,
-    BufferDict,
+    BufferDict, SIZE
 )
 from src.utils.pylogger import RankedLogger
 
@@ -38,18 +38,17 @@ class BaseHead(nn.Module):
     def forward(
             self,
             features: PYRAMID,
-            gt_coordinates: Optional[COORDINATE] = None,
-            gt_labels: Optional[LABEL] = None,
-            shape: Optional[Tuple[int, int]] = (600, 960),
+            gt_coordinate: Optional[COORDINATE] = None,
+            gt_label: Optional[LABEL] = None,
+            shape: Optional[SIZE] = None,
     ) -> Union[BBoxDict, LossDict]:
         raise NotImplementedError()
 
 
-
 class BaseMetric(Metric):
-    def update(self, batch: BatchDict, pred: BatchDict) -> None: raise NotImplementedError()
+    def update(self, output: BatchDict) -> None: raise NotImplementedError()
 
-    def compute(self) -> LossDict: raise NotImplementedError()
+    def compute(self) -> MetricDict: raise NotImplementedError()
 
 
 class BaseTransform(nn.Module):
@@ -72,7 +71,7 @@ class BaseTransform(nn.Module):
         return batch
 
 
-class Model(L.LightningModule):
+class BaseModel(L.LightningModule):
     def __init__(
             self,
             backbone: BaseBackbone,
@@ -88,8 +87,10 @@ class Model(L.LightningModule):
         self.transform = transform
         self.metric = metric
 
-    def pth_adapter(self, state_dict: Dict) -> Dict:
-        raise NotImplementedError()
+    @property
+    def example_input_array(self): raise NotImplementedError()
+
+    def pth_adapter(self, state_dict: Dict) -> Dict: raise NotImplementedError()
 
     def load_from_pth(self, file_path: Union[str, Path]) -> None:
         state_dict = torch.load(str(file_path), map_location='cpu')
@@ -128,76 +129,114 @@ class Model(L.LightningModule):
     def fraction_epoch(self):
         return self.trainer.global_step / self.trainer.estimated_stepping_batches
 
-
     def _forward_impl(
             self,
             image: IMAGE,
             past_clip_ids: TIME,
             future_clip_ids: TIME,
             buffer: Optional[BufferDict] = None,
-            bbox_coordinate: Optional[COORDINATE] = None,
-            bbox_label: Optional[LABEL] = None,
-    ) -> :
+            buffer_delay: Optional[int] = None,
+            gt_coordinate: Optional[COORDINATE] = None,
+            gt_label: Optional[LABEL] = None,
+            shape: Optional[SIZE] = None,
+    ) -> Tuple[Union[BBoxDict, LossDict], BufferDict]:
+        if buffer is not None:
+            # requires buffer, batch_size must be 1
+            assert image.size(0) == 1
+            buffer_list = buffer['buffer_list'] if 'buffer_list' in buffer else []
+            buffer_clip_id_list = buffer['buffer_clip_id_list'] if 'buffer_clip_id_list' in buffer else []
+            buffer_clip_id_list = [b - buffer_delay for b in buffer_clip_id_list]
 
-    def forward_impl(
-            self,
-            batch: BatchDict,
-            buffer: Optional[Dict],
-    ) -> Tuple[BatchDict, LossDict, Optional[Dict]]:
-        raise NotImplementedError()
+            new_buffer_list = []
+            new_buffer_clip_id_list = []
+            for i, p in enumerate(past_clip_ids[0].cpu().tolist()):
+                if p in buffer_clip_id_list:
+                    new_buffer_list.append(buffer_list[buffer_clip_id_list.index(p)])
+                else:
+                    new_buffer_list.append(self.backbone(image[:, i:i+1]))
+                new_buffer_clip_id_list.append(p)
+            features_p = tuple([torch.cat([f[i] for f in new_buffer_list], dim=1) for i in range(len(new_buffer_list[0]))])
+            new_buffer = {
+                'buffer_list': new_buffer_list,
+                'buffer_clip_id_list': new_buffer_clip_id_list
+            }
+        else:
+            features_p = self.backbone(image)
+            new_buffer = None
 
-    def forward(self, batch: BatchDict) -> Tuple[BatchDict, LossDict]
+        features_f = self.neck(features_p, past_clip_ids, future_clip_ids)
+        return self.head(features_f, gt_coordinate, gt_label, shape), new_buffer
+
+    def forward(self, batch: BatchDict) -> Union[BatchDict, LossDict]:
+        with torch.inference_mode():
+            batch = self.transform.preprocess(batch) if self.transform is not None else batch
+        if self.training:
+            loss_dict, _ = self._forward_impl(
+                image=batch['image']['image'],
+                past_clip_ids=batch['image_clip_ids'],
+                future_clip_ids=batch['bbox_clip_ids'],
+                gt_coordinate=batch['bbox']['coordinate'],
+                gt_label=batch['bbox']['label'],
+                shape=batch['meta']['current_size'],
+            )
+            return loss_dict
+        else:
+            with torch.inference_mode():
+                bbox, _ = self._forward_impl(
+                    image=batch['image']['image'],
+                    past_clip_ids=batch['image_clip_ids'],
+                    future_clip_ids=batch['bbox_clip_ids'],
+                    shape=batch['meta']['current_size'],
+                )
+                batch['bbox_pred'] = bbox
+                batch = self.transform.postprocess(batch) if self.transform is not None else batch
+            return batch
 
     def inference(
             self,
-            batch: BatchDict,
-            buffer: Optional[Dict],
-    ) -> Tuple[BatchDict, LossDict, Optional[Dict]]:
+            image: IMAGE,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
+            buffer: Optional[BufferDict] = None,
+            buffer_delay: Optional[int] = None,
+    ) -> Tuple[BBoxDict, BufferDict]:
         with torch.inference_mode():
-            pred, metric, buf = self.forward_impl(batch, buffer)
-            return self.inference_impl(batch, buffer)
+            return self._forward_impl(image, past_clip_ids, future_clip_ids, buffer, buffer_delay)
 
-    def forward(
-            self,
-            batch: BatchTDict,
-    ) -> Union[BatchTDict, LossDict]:
-        with torch.inference_mode():
-            batch = self.transform.preprocess_tensor(batch) if self.transform is not None else batch
-        with contextlib.nullcontext() if self.training else torch.inference_mode():
-            return self.forward_impl(batch)
-
-    def training_step(self, batch: BatchTDict, *args, **kwargs) -> LossDict:
+    def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         output: LossDict = self(batch)
         self.log_dict(output, on_step=True, prog_bar=True)
         return output
 
     def on_validation_epoch_start(self) -> None:
-        super().on_validation_epoch_start()
         if self.metric is not None:
             self.metric.reset()
 
-    def validation_step(self, batch: BatchTDict, *args, **kwargs) -> BatchTDict:
-        output: BatchTDict = self(batch)
+    def validation_step(self, batch: BatchDict, *args, **kwargs) -> BatchDict:
+        output: BatchDict = self(batch)
         if not self.trainer.sanity_checking and self.metric is not None:
-            self.metric.update(batch, output)
+            self.metric.update(output)
         return output
 
     def on_validation_epoch_end(self) -> None:
-        super().on_validation_epoch_end()
         if not self.trainer.sanity_checking and self.metric is not None:
-            self.log_dict(self.metric.compute(), on_epoch=True, prog_bar=True)
+            self.log_dict({f'val_{k}': v for k, v in self.metric.compute().items()}, on_epoch=True, prog_bar=True)
         return None
 
     def on_test_epoch_start(self) -> None:
-        super().on_test_epoch_start()
-        return self.on_validation_epoch_start()
+        if self.metric is not None:
+            self.metric.reset()
 
-    def test_step(self, batch: BatchTDict, *args, **kwargs) -> BatchTDict:
-        return self.validation_step(batch)
+    def test_step(self, batch: BatchDict, *args, **kwargs) -> BatchDict:
+        output: BatchDict = self(batch)
+        if not self.trainer.sanity_checking and self.metric is not None:
+            self.metric.update(output)
+        return output
 
     def on_test_epoch_end(self) -> None:
-        super().on_test_epoch_end()
-        return self.on_validation_epoch_end()
+        if not self.trainer.sanity_checking and self.metric is not None:
+            self.log_dict({f'test_{k}': v for k, v in self.metric.compute().items()}, on_epoch=True, prog_bar=True)
+        return None
 
     @staticmethod
     def freeze_module(module: nn.Module):

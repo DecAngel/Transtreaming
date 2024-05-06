@@ -14,22 +14,16 @@ from typing import Tuple, Optional, Protocol, Dict, Literal, Any
 import torch
 
 
+from src.primitives.datamodule import BaseDataSpace
+
+
 @dataclass
 class TensorInfo:
     dtype: torch.dtype
     shape: torch.Size
 
 
-class TensorDictSpace(Protocol):
-    """Manages the sharing of interprocess dictionaries, with shared tensors but non-shared non-tensors.
-
-    """
-    def __contains__(self, name: str) -> bool: ...
-    def __getitem__(self, name: str) -> Dict[str, Any]: ...
-    def __setitem__(self, name: str, d: Dict[str, Any]): ...
-
-
-class NSMTensorDictSpace(SharedMemoryManager, TensorDictSpace):
+class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
     def __init__(
             self,
             prefix: str = '',
@@ -187,7 +181,7 @@ class NSMTensorDictSpace(SharedMemoryManager, TensorDictSpace):
 
 if __name__ == '__main__':
     def child1():
-        nsmm = NSMTensorDictSpace(prefix='nsmm', method='connect')
+        nsmm = NSMDataSpace(prefix='nsmm', method='connect')
         nsmm['a'] = {
             'b': torch.arange(0, 1000000000, dtype=torch.float32).reshape(5, 200000000),
             'c': [1, 2, 3, 'str1', 'str2'],
@@ -196,7 +190,7 @@ if __name__ == '__main__':
         print(f'{os.getpid()} finished')
 
     def child2():
-        nsmm = NSMTensorDictSpace(prefix='nsmm', method='connect')
+        nsmm = NSMDataSpace(prefix='nsmm', method='connect')
         e = {
             'f': torch.arange(0, 1000000000, dtype=torch.float32).reshape(5, 200000000),
             'g': [1, 2, 3, 'str1', 'str2'],
@@ -217,7 +211,7 @@ if __name__ == '__main__':
         print(f'{os.getpid()} finished')
 
 
-    nsmm = NSMTensorDictSpace(prefix='nsmm', method='start')
+    nsmm = NSMDataSpace(prefix='nsmm', method='start')
     p1 = Process(target=child1)
     p1.start()
     p1.join()

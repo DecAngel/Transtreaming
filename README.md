@@ -377,7 +377,7 @@ python train.py -m data.batch_size=32,64,128 model.lr=0.001,0.0005
 python train.py -m hparams_search=mnist_optuna experiment=example
 ```
 
-> **Note**: Using [Optuna Sweeper](https://hydra.cc/docs/next/plugins/optuna_sweeper) doesn't require you to add any boilerplate to your code, everything is defined in a [single config file](configs/hparams_search/mnist_optuna.yaml).
+> **Note**: Using [Optuna Sweeper](https://hydra.cc/docs/next/plugins/optuna_sweeper) doesn't require you to add any boilerplate to your code, everything is defined in a [single config file](configs/hparams_search/optuna.yaml).
 
 > **Warning**: Optuna sweeps are not failure-resistant (if one job crashes then the whole sweep crashes).
 

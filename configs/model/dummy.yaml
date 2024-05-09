@@ -1,0 +1,7 @@
+_target_: src.primitives.model.BaseModel
+backbone:
+  _target_: src.models.backbones.dummy_backbone.DummyBackbone
+neck:
+  _target_: src.models.necks.dummy_neck.DummyNeck
+head:
+  _target_: src.models.heads.dummy_head.DummyHead

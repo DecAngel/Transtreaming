@@ -1,4 +1,5 @@
 from lightning import Callback
+import lightning as L
 from torch.optim import Optimizer
 
 
@@ -28,7 +29,7 @@ def plot_grad_flow(title, named_parameters):
             ave_grads.append(p.grad.abs().mean().cpu().numpy())
             max_grads.append(p.grad.abs().max().cpu().numpy())
 
-    plt.figure(title)
+    plt.figure()
     plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
     plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
     plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
@@ -37,7 +38,7 @@ def plot_grad_flow(title, named_parameters):
     plt.ylim(bottom=-0.05, top=0.5)  # zoom in on the lower gradient regions
     plt.xlabel("Layers")
     plt.ylabel("average gradient")
-    plt.title("Gradient flow")
+    plt.title(f"{title} gradient flow")
     plt.grid(True)
     plt.legend([Line2D([0], [0], color="r", lw=4),
                 Line2D([0], [0], color="b", lw=4),
@@ -55,7 +56,7 @@ class VisualizeGrad(Callback):
         self.counter = 0
 
     def on_before_optimizer_step(
-        self, trainer: "pl.Trainer", pl_module: BaseModel, optimizer: Optimizer
+        self, trainer: "L.Trainer", pl_module: BaseModel, optimizer: Optimizer
     ) -> None:
         self.counter += 1
         if self.counter == self.interval:

@@ -1,0 +1,7 @@
+defaults:
+  - model_checkpoint
+  - early_stopping
+  - model_summary
+  - tqdm_progress_bar
+  - ema
+  - lr_monitor

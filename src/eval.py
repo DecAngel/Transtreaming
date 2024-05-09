@@ -1,7 +1,10 @@
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import hydra
 import rootutils
+import torch
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
@@ -23,6 +26,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 #
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
+torch.set_float32_matmul_precision('highest')
 
 from src.utils import (
     RankedLogger,
@@ -47,8 +51,8 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     assert cfg.ckpt_path
 
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
+    log.info(f"Instantiating datamodule <{cfg.datamodule._target_}>")
+    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model)
@@ -71,8 +75,18 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
 
+    # load ckpt or pth
+    path = Path(cfg.ckpt_path).resolve()
+    log.info(f"Loading model from {str(path)}")
+    if path.suffix == '.pth':
+        model.load_from_pth(str(path))
+    elif path.suffix == '.ckpt':
+        model.load_from_ckpt(str(path))
+    else:
+        raise ValueError(f"Unsupported file type {path.suffix}")
+
     log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    trainer.test(model=model, datamodule=datamodule)
 
     # for predictions use trainer.predict(...)
     # predictions = trainer.predict(model=model, dataloaders=dataloaders, ckpt_path=cfg.ckpt_path)
@@ -92,7 +106,9 @@ def main(cfg: DictConfig) -> None:
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
 
-    evaluate(cfg)
+    metric_dict, object_dict = evaluate(cfg)
+
+    log.info(f'Metric Dict: {json.dumps({k: v.cpu().item() for k, v in metric_dict.items()}, indent=2)}')
 
 
 if __name__ == "__main__":

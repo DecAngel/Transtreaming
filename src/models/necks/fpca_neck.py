@@ -7,7 +7,8 @@ import torch.nn as nn
 from jaxtyping import Float
 import torch.nn.functional as F
 
-from ..types import PYRAMID, BaseNeck, TIME
+from src.primitives.batch import PYRAMID, TIME
+from src.primitives.model import BaseNeck
 
 
 def features2windows(
@@ -244,6 +245,9 @@ class FPCABlock(nn.Module):
 
 
 class FPCANeck(BaseNeck):
+    input_frames: int = 4
+    output_frames: int = 1
+
     def __init__(
             self,
             in_channels: Tuple[int, ...],
@@ -259,6 +263,13 @@ class FPCANeck(BaseNeck):
             for c in in_channels
         ])
 
+        def init_yolo(M):
+            for m in M.modules():
+                if isinstance(m, torch.nn.BatchNorm2d):
+                    m.eps = 1e-3
+                    m.momentum = 0.03
+        self.apply(init_yolo)
+
     def forward(
             self,
             features: PYRAMID,
@@ -273,9 +284,6 @@ class FPCANeck(BaseNeck):
         if future_time_constant is None:
             future_time_constant = torch.tensor([[1]], dtype=torch.float32, device=features[0].device)
         TF = future_time_constant.size(1)
-
-        if False:
-            past_time_constant = torch.cat([past_time_constant, torch.zeros_like(past_time_constant[:, :1])], dim=1)
 
         outputs = []
         for f, block in zip(features, self.blocks):

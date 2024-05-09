@@ -39,7 +39,7 @@ def get_all_local_ip() -> List[str]:
     ))
 
 
-class TBServer(TensorBoard):
+class TBService(TensorBoard):
     def __init__(self, log_dir: str, port: Optional[int] = None):
         super().__init__()
         if is_port_in_use(port):

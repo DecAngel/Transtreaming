@@ -1,0 +1,14 @@
+defaults:
+  - argoverse
+  - _self_
+
+
+train_data_source:
+  image_clip_ids: [ -3, -2, -1, 0 ]
+  bbox_clip_ids: [ 0, 1, 2, 3 ]
+val_data_source:
+  image_clip_ids: [ -1, 0 ]
+  bbox_clip_ids: [ 1 ]
+test_data_source:
+  image_clip_ids: [ -1, 0 ]
+  bbox_clip_ids: [ 1 ]

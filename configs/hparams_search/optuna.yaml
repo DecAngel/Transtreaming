@@ -1,0 +1,64 @@
+# @package _global_
+
+# example hyperparameter optimization of some experiment with Optuna:
+# python train.py -m hparams_search=optuna experiment=example
+
+defaults:
+  - override /hydra/sweeper: optuna
+  - override /hydra/launcher: joblib
+
+# choose metric which will be optimized by Optuna
+# make sure this is the correct name of some metric logged in lightning module!
+optimized_metric: "val_mAP"
+
+# here we define Optuna hyperparameter search
+# it optimizes for value returned from function with @hydra.main decorator
+# docs: https://hydra.cc/docs/next/plugins/optuna_sweeper
+hydra:
+  mode: "MULTIRUN" # set hydra to multirun by default if this config is attached
+
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+
+    # storage URL to persist optimization results
+    # for example, you can use SQLite if you set 'sqlite:///example.db'
+    storage: null
+
+    # name of the study to persist optimization results
+    study_name: null
+
+    # number of parallel workers
+    n_jobs: ${oc.select:num_gpus, 1}
+
+    # 'minimize' or 'maximize' the objective
+    direction: maximize
+
+    # total number of runs that will be executed
+    n_trials: 20
+
+    # choose Optuna hyperparameter sampler
+    # you can choose bayesian sampler (tpe), random search (without optimization), grid sampler, and others
+    # docs: https://optuna.readthedocs.io/en/stable/reference/samplers.html
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 1234
+      n_startup_trials: 10 # number of random sampling runs before optimization starts
+
+    # define hyperparameter search space
+    params:
+      seed: choice(12341,12342,12343,12344,12345,12346,12347,12348,12349,12350)
+      model.optim.lr: interval(0.0005, 0.005)
+
+  launcher:
+    _target_: hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher
+    n_jobs: ${oc.select:num_gpus, 1}
+    backend: null
+    prefer: "processes"
+    require: null
+    verbose: 0
+    timeout: null
+    pre_dispatch: 2*n_jobs
+    batch_size: 1
+    temp_folder: null
+    max_nbytes: null
+    mmap_mode: r

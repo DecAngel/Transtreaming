@@ -34,6 +34,7 @@ class ArgoverseDataSource(BaseDataSource):
         self.cache = cache
         self.size = tuple(size)
         self.max_objs = max_objs
+        self.size_tensor = torch.tensor(self.size, dtype=torch.float32)
 
     def __post_init__(self) -> None:
         logger.info(f'Building indices for Argoverse dataset at {self.img_dir} with {self.ann_file}...')
@@ -127,12 +128,13 @@ class ArgoverseDataSource(BaseDataSource):
         return PILToTensor()(image)[[2, 1, 0]]
 
     def get_meta(self, seq_id: int, frame_id: int) -> MetaDict:
+        image_id_0 = self._get_image_id_0(seq_id, frame_id)
         return MetaDict(
-            image_id=self.image_ids[self._get_image_id_0(seq_id, frame_id)],
+            image_id=self.image_ids[image_id_0],
             seq_id=torch.tensor(seq_id, dtype=torch.int32),
             frame_id=torch.tensor(frame_id, dtype=torch.int32),
             current_size=torch.tensor(self.size, dtype=torch.int32),
-            original_size=self.image_sizes[self._get_image_id_0(seq_id, frame_id)]
+            original_size=self.image_sizes[image_id_0]
         )
 
     def get_image(self, seq_id: int, frame_id: int) -> ImageDict:
@@ -153,8 +155,9 @@ class ArgoverseDataSource(BaseDataSource):
 
     def get_bbox(self, seq_id: int, frame_id: int) -> BBoxDict:
         image_id_0 = self._get_image_id_0(seq_id, frame_id)
+        ratio = (self.size_tensor / self.image_sizes[image_id_0])[[1, 0, 1, 0]]
         return BBoxDict(
-            coordinate=self.gt_coordinates[image_id_0],
+            coordinate=self.gt_coordinates[image_id_0]*ratio,
             label=self.gt_labels[image_id_0],
             probability=torch.ones(self.max_objs, dtype=torch.float32),
         )

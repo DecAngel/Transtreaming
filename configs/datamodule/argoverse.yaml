@@ -1,6 +1,37 @@
-_target_: src.datamodules.argoverse.ArgoverseDataModule
-data_dir: ${paths.data_dir}
-batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-train_val_test_split: [55_000, 5_000, 10_000]
-num_workers: 0
-pin_memory: False
+_target_: src.primitives.datamodule.BaseDataModule
+train_data_source:
+  _target_: src.datamodules.data_sources.argoverse_source.ArgoverseDataSource
+  img_dir: ${paths.data_dir}argoverse/Argoverse-1.1/tracking
+  ann_file: ${paths.data_dir}argoverse/Argoverse-HD/annotations/train.json
+  image_clip_ids: [ -1, 0 ]
+  bbox_clip_ids: [ 0, 1 ]
+  cache: True
+  size: [ 600, 960 ]
+  max_objs: 100
+val_data_source:
+  _target_: src.datamodules.data_sources.argoverse_source.ArgoverseDataSource
+  img_dir: ${paths.data_dir}argoverse/Argoverse-1.1/tracking
+  ann_file: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+  image_clip_ids: [ -1, 0 ]
+  bbox_clip_ids: [ 1 ]
+  cache: True
+  size: [ 600, 960 ]
+  max_objs: 100
+test_data_source:
+  _target_: src.datamodules.data_sources.argoverse_source.ArgoverseDataSource
+  img_dir: ${paths.data_dir}argoverse/Argoverse-1.1/tracking
+  ann_file: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+  image_clip_ids: [ -1, 0 ]
+  bbox_clip_ids: [ 1 ]
+  cache: True
+  size: [ 600, 960 ]
+  max_objs: 100
+data_space:
+  _target_: src.datamodules.data_spaces.nsm_space.NSMDataSpace
+  prefix: ""
+  method: "default"
+data_space_train: ${datamodule.train_data_source.cache}
+data_space_val: ${datamodule.val_data_source.cache}
+data_space_test: ${datamodule.test_data_source.cache}
+batch_size: 1 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+num_workers: 1

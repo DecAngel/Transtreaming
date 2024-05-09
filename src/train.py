@@ -1,9 +1,13 @@
+import json
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
 import lightning as L
 import rootutils
 import torch
+from hydra.core.hydra_config import HydraConfig
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
@@ -25,7 +29,10 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 #
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
+torch.set_float32_matmul_precision('high')
 
+from src.primitives.datamodule import BaseDataModule
+from src.primitives.model import BaseModel
 from src.utils import (
     RankedLogger,
     extras,
@@ -54,11 +61,18 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
 
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
+    h = HydraConfig.get()
+    if str(h.mode) == 'RunMode.MULTIRUN':
+        single_gpu_id = h.job.num % cfg.get('num_gpus', 1)
+        cfg.trainer.devices = [single_gpu_id]
+        log.info(f'Using gpu id: {single_gpu_id}, delay for {single_gpu_id*10} seconds')
+        time.sleep(single_gpu_id*10)
+
+    log.info(f"Instantiating datamodule <{cfg.datamodule._target_}>")
+    datamodule: BaseDataModule = hydra.utils.instantiate(cfg.datamodule)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
+    model: BaseModel = hydra.utils.instantiate(cfg.model)
 
     log.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
@@ -82,9 +96,23 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
 
+    # load ckpt or pth
+    path = cfg.get("ckpt_path")
+    if path is not None:
+        path = Path(path).resolve()
+        log.info(f"Loading model from {str(path)}")
+        if path.suffix == '.pth':
+            model.load_from_pth(str(path))
+        elif path.suffix == '.ckpt':
+            model.load_from_ckpt(str(path))
+        else:
+            raise ValueError(f"Unsupported file type {path.suffix}")
+    else:
+        log.info(f"Skip loading ckpt")
+
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        trainer.fit(model=model, datamodule=datamodule)
 
     train_metrics = trainer.callback_metrics
 
@@ -119,12 +147,8 @@ def main(cfg: DictConfig):
     # train the model
     metric_dict, object_dict = train(cfg)
 
-    # safely retrieve metric value for hydra-based hyperparameter optimization
-    metric_value = get_metric_value(
-        metric_dict=metric_dict, metric_name=cfg.get("optimized_metric")
-    )
-
-    log.info(f'Best metric value: {metric_value}')
+    # output result
+    log.info(f'Metric Dict: {json.dumps({k: v.cpu().item() for k, v in metric_dict.items()}, indent=2)}')
 
 
 if __name__ == "__main__":

@@ -1,0 +1,24 @@
+# @package _global_
+
+# specify here default configuration
+# order of defaults determines the order in which configs override each other
+defaults:
+  - services: default
+  - paths: default
+  - extras: default
+
+  # optional local config for machine/user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: default
+
+  # debugging config (enable through command line, e.g. `python train.py debug=default)
+  - debug: null
+
+  - _self_
+
+extras:
+  enforce_tags: False
+
+task_name: "serve"
+
+tags: ["service"]

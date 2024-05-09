@@ -5,6 +5,7 @@ from lightning import Callback
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 
+from src.primitives.service import BaseService
 from src.utils import pylogger
 
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
@@ -54,3 +55,21 @@ def instantiate_loggers(logger_cfg: DictConfig) -> List[Logger]:
             logger.append(hydra.utils.instantiate(lg_conf))
 
     return logger
+
+
+def instantiate_services(service_cfg: DictConfig) -> List[BaseService]:
+    service: List[BaseService] = []
+
+    if not service_cfg:
+        log.warning("No service configs found! Skipping...")
+        return service
+
+    if not isinstance(service_cfg, DictConfig):
+        raise TypeError("Service config must be a DictConfig!")
+
+    for _, sv_conf in service_cfg.items():
+        if isinstance(sv_conf, DictConfig) and "_target_" in sv_conf:
+            log.info(f"Instantiating service <{sv_conf._target_}>")
+            service.append(hydra.utils.instantiate(sv_conf))
+
+    return service

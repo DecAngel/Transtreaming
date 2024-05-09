@@ -1,0 +1,6 @@
+visualize_grad:
+  _target_: src.callbacks.visualize_grad.VisualizeGrad
+  interval: 100
+  vis_backbone: False
+  vis_neck: True
+  vis_head: False

@@ -1,6 +1,5 @@
-import contextlib
 from pathlib import Path
-from typing import Optional, Tuple, Union, Dict
+from typing import Optional, Tuple, Union, Dict, Literal, Mapping, Any, List
 
 import lightning as L
 import torch
@@ -19,12 +18,42 @@ from src.utils.pylogger import RankedLogger
 logger = RankedLogger(__name__, rank_zero_only=True)
 
 
-class BaseBackbone(nn.Module):
+class BlockMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.trainer: Optional[L.Trainer] = None
+
+    def freeze(self):
+        if isinstance(self, nn.Module):
+            for p in self.parameters():
+                p.requires_grad = False
+
+    def unfreeze(self):
+        if isinstance(self, nn.Module):
+            for p in self.parameters():
+                p.requires_grad = True
+
+    @property
+    def fraction_epoch(self):
+        return self.trainer.global_step / self.trainer.estimated_stepping_batches
+
+    @property
+    def total_epoch(self):
+        return self.trainer.max_epochs
+
+
+class BaseBackbone(BlockMixin, nn.Module):
+    state_dict_replace: List[Tuple[str, str]] = []
+
     def forward(self, image: IMAGE) -> PYRAMID:
         raise NotImplementedError()
 
 
-class BaseNeck(nn.Module):
+class BaseNeck(BlockMixin, nn.Module):
+    state_dict_replace: List[Tuple[str, str]] = []
+    input_frames: int = 2
+    output_frames: int = 2
+
     def forward(
             self,
             features: PYRAMID,
@@ -34,7 +63,10 @@ class BaseNeck(nn.Module):
         raise NotImplementedError()
 
 
-class BaseHead(nn.Module):
+class BaseHead(BlockMixin, nn.Module):
+    state_dict_replace: List[Tuple[str, str]] = []
+    require_prev_frame: bool = True
+
     def forward(
             self,
             features: PYRAMID,
@@ -45,13 +77,13 @@ class BaseHead(nn.Module):
         raise NotImplementedError()
 
 
-class BaseMetric(Metric):
-    def update(self, output: BatchDict) -> None: raise NotImplementedError()
+class BaseMetric(BlockMixin, Metric):
+    def update(self, output: BatchDict, **kwargs) -> None: raise NotImplementedError()
 
     def compute(self) -> MetricDict: raise NotImplementedError()
 
 
-class BaseTransform(nn.Module):
+class BaseTransform(BlockMixin, nn.Module):
     def __init__(self):
         super().__init__()
         self.flag = True
@@ -71,6 +103,15 @@ class BaseTransform(nn.Module):
         return batch
 
 
+class BaseOptim(BlockMixin):
+    def configure_optimizers(
+            self,
+            backbone: BaseBackbone,
+            neck: BaseNeck,
+            head: BaseHead,
+    ): raise NotImplementedError()
+
+
 class BaseModel(L.LightningModule):
     def __init__(
             self,
@@ -79,6 +120,8 @@ class BaseModel(L.LightningModule):
             head: BaseHead,
             transform: Optional[BaseTransform] = None,
             metric: Optional[BaseMetric] = None,
+            optim: Optional[BaseOptim] = None,
+            torch_compile: Optional[Literal['default', 'reduce-overhead', 'max-autotune']] = None,
     ):
         super().__init__()
         self.backbone = backbone
@@ -86,16 +129,56 @@ class BaseModel(L.LightningModule):
         self.head = head
         self.transform = transform
         self.metric = metric
+        self.optim = optim
+        if torch_compile is not None:
+            self._forward_impl = torch.compile(self._forward_impl, fullgraph=True, dynamic=True, mode=torch_compile)
+
+    def setup(self, stage: str) -> None:
+        for b in filter(None, [self.backbone, self.neck, self.head, self.transform, self.metric, self.optim]):
+            b.trainer = self.trainer
 
     @property
-    def example_input_array(self): raise NotImplementedError()
+    def example_input_array(self):
+        b = 2
+        tp = self.neck.input_frames
+        tf = self.neck.output_frames
+        return {
+            'meta': {
+                'seq_id': torch.randint(0, 10, size=(b, ), dtype=torch.long),
+                'frame_id': torch.randint(0, 900, size=(b, ), dtype=torch.long),
+                'image_id': torch.randint(0, 10000, size=(b, ), dtype=torch.long),
+                'current_size': torch.tensor([[100, 200]]*b, dtype=torch.long),
+                'original_size': torch.tensor([[200, 400]]*b, dtype=torch.long),
+            },
+            'image': {
+                'image': torch.rand(b, tp, 3, 100, 200),
+            },
+            'image_clip_ids': torch.stack([torch.arange(-tp+1, 1, dtype=torch.long)]*b, dim=0),
+            'bbox': {
+                'coordinate': torch.randint(0, 100, size=(b, tf, 100, 4), dtype=torch.float32),
+                'label': torch.randint(0, 10, size=(b, tf, 100,), dtype=torch.long),
+                'probability': torch.ones(b, tf, 100, dtype=torch.float32),
+            },
+            'bbox_clip_ids': torch.stack([torch.arange(1, tf+1, dtype=torch.long)]*b, dim=0),
+        },
 
-    def pth_adapter(self, state_dict: Dict) -> Dict: raise NotImplementedError()
+    def configure_optimizers(self):
+        if self.optim is not None:
+            return self.optim.configure_optimizers(self.backbone, self.neck, self.head)
+        else:
+            return None
 
     def load_from_pth(self, file_path: Union[str, Path]) -> None:
-        state_dict = torch.load(str(file_path), map_location='cpu')
-        with contextlib.suppress(NotImplementedError):
-            state_dict = self.pth_adapter(state_dict)
+        state_dict = torch.load(str(file_path), map_location='cpu')['model']
+
+        # replace
+        replacements = self.backbone.state_dict_replace + self.neck.state_dict_replace + self.head.state_dict_replace
+        new_ckpt = {}
+        for k, v in state_dict.items():
+            for r1, r2 in replacements:
+                k = k.replace(r1, r2)
+            new_ckpt[k] = v
+        state_dict = new_ckpt
 
         misshaped_keys = []
         ssd = self.state_dict()
@@ -124,10 +207,6 @@ class BaseModel(L.LightningModule):
             strict=strict,
         )
         logger.info(f'ckpt file {file_path} loaded!')
-
-    @property
-    def fraction_epoch(self):
-        return self.trainer.global_step / self.trainer.estimated_stepping_batches
 
     def _forward_impl(
             self,
@@ -164,7 +243,10 @@ class BaseModel(L.LightningModule):
             features_p = self.backbone(image)
             new_buffer = None
 
-        features_f = self.neck(features_p, past_clip_ids, future_clip_ids)
+        pci = past_clip_ids[:, :-1].float()
+        fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
+        features_f = self.neck(features_p, pci, fci)
+
         return self.head(features_f, gt_coordinate, gt_label, shape), new_buffer
 
     def forward(self, batch: BatchDict) -> Union[BatchDict, LossDict]:
@@ -220,7 +302,9 @@ class BaseModel(L.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         if not self.trainer.sanity_checking and self.metric is not None:
-            self.log_dict({f'val_{k}': v for k, v in self.metric.compute().items()}, on_epoch=True, prog_bar=True)
+            d = {f'val_{k}': v.cpu().item() for k, v in self.metric.compute().items()}
+            self.log_dict(d, on_epoch=True, prog_bar=True)
+            logger.info(f'{d}')
         return None
 
     def on_test_epoch_start(self) -> None:
@@ -235,15 +319,7 @@ class BaseModel(L.LightningModule):
 
     def on_test_epoch_end(self) -> None:
         if not self.trainer.sanity_checking and self.metric is not None:
-            self.log_dict({f'test_{k}': v for k, v in self.metric.compute().items()}, on_epoch=True, prog_bar=True)
+            d = {f'test_{k}': v.cpu().item() for k, v in self.metric.compute().items()}
+            self.log_dict(d, on_epoch=True, prog_bar=False)
+            logger.info(f'{d}')
         return None
-
-    @staticmethod
-    def freeze_module(module: nn.Module):
-        for p in module.parameters():
-            p.requires_grad = False
-
-    @staticmethod
-    def unfreeze_module(module: nn.Module):
-        for param in module.parameters():
-            param.requires_grad = True

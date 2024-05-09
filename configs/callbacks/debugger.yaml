@@ -1,0 +1,2 @@
+debugger:
+  _target_: src.callbacks.debugger.Debugger

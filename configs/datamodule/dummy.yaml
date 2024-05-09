@@ -1,0 +1,16 @@
+_target_: src.primitives.datamodule.BaseDataModule
+train_data_source:
+  _target_: src.datamodules.data_sources.dummy_source.DummyDataSource
+val_data_source:
+  _target_: src.datamodules.data_sources.dummy_source.DummyDataSource
+test_data_source:
+  _target_: src.datamodules.data_sources.dummy_source.DummyDataSource
+data_space:
+  _target_: src.datamodules.data_spaces.nsm_space.NSMDataSpace
+  prefix: ""
+  method: "default"
+data_space_train: True
+data_space_val: True
+data_space_test: True
+batch_size: 2 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+num_workers: 4

@@ -35,6 +35,7 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
         self.prefix = prefix
         self.safe_margin = 1 * (2 ** 20)
         self._close_list = []
+        self._serving = False
 
         if method == 'default':
             try:
@@ -45,6 +46,10 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
             self.connect()
         elif method == 'start':
             self.start()
+
+    def start(self, initializer = None, initargs = ()):
+        super().start(initializer, initargs)
+        self._serving = True
 
     def __del__(self):
         for s in self._close_list:
@@ -74,7 +79,8 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
     def _has_nsm(self, name: str) -> bool:
         try:
             sms = sm.SharedMemory(name=self._get_path(name), create=False)
-            resource_tracker.unregister(sms._name, 'shared_memory')
+            if not self._serving:
+                resource_tracker.unregister(sms._name, 'shared_memory')
             sms.close()
         except (OSError, FileNotFoundError):
             return False
@@ -84,11 +90,12 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
     def _get_nsm(self, name: str) -> sm.SharedMemory:
         """Returns a new SharedMemory instance with the specified size in
                     bytes, to be tracked by the manager."""
-        print(f'get {self._get_path(name)} from {os.getpid()}')
+        # print(f'get {self._get_path(name)} from {os.getpid()}')
         sms = sm.SharedMemory(name=self._get_path(name), create=False)
 
         # manual close and unlink
-        resource_tracker.unregister(sms._name, 'shared_memory')
+        if not self._serving:
+            resource_tracker.unregister(sms._name, 'shared_memory')
         sms.__del__ = None
         self._close_list.append(sms)
         return sms
@@ -106,7 +113,7 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
     def _set_nsm(self, name: str, size: int) -> sm.SharedMemory:
         """Returns a new SharedMemory instance with the specified size in
                             bytes, to be tracked by the manager."""
-        print(f'set {self._get_path(name)} from {os.getpid()}')
+        # print(f'set {self._get_path(name)} from {os.getpid()}')
 
         if self._get_shm_limit() < size + self.safe_margin:
             raise MemoryError(f'Insufficient shm memory. '
@@ -114,7 +121,8 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
                               f'only {self._get_shm_limit() - self.safe_margin} bytes available.')
 
         sms = sm.SharedMemory(name=self._get_path(name), create=True, size=size)
-        resource_tracker.unregister(sms._name, 'shared_memory')
+        if not self._serving:
+            resource_tracker.unregister(sms._name, 'shared_memory')
         sms.__del__ = None
         self._close_list.append(sms)
         with self._Client(self._address, authkey=self._authkey) as conn:

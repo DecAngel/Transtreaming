@@ -1,0 +1,2 @@
+tqdm_progress_bar:
+  _target_: src.callbacks.tqdm_progress_bar.NewTqdmProgressBar

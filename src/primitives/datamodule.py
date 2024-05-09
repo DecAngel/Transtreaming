@@ -7,6 +7,9 @@ import torch
 from torch.utils.data import Dataset, default_collate, DataLoader
 
 from src.primitives.batch import MetaDict, ImageDict, BBoxDict, BatchDict
+from src.utils.pylogger import RankedLogger
+
+log = RankedLogger(__name__, rank_zero_only=False)
 
 
 class BaseDataSource(Dataset):
@@ -50,8 +53,8 @@ class BaseDataSource(Dataset):
                 frame_id = item + self.margin_left
                 batch: BatchDict = {
                     'meta': self.get_meta(seq_id, frame_id),
-                    'image': default_collate(self.get_image(seq_id, frame_id+c) for c in self.image_clip_ids),
-                    'bbox': default_collate(self.get_bbox(seq_id, frame_id+c) for c in self.bbox_clip_ids),
+                    'image': default_collate([self.get_image(seq_id, frame_id+c) for c in self.image_clip_ids]),
+                    'bbox': default_collate([self.get_bbox(seq_id, frame_id+c) for c in self.bbox_clip_ids]),
                     'image_clip_ids': self.ici,
                     'bbox_clip_ids': self.bci,
                 }
@@ -89,10 +92,20 @@ class BaseDataModule(L.LightningDataModule):
             num_workers: int = 0,
     ):
         super().__init__()
+        self.train_init = False
+        self.val_init = False
+        self.test_init = False
+
         # post init inside __init__ if not using data_space
-        if (data_space is None or not data_space_train) and train_data_source is not None: train_data_source.__post_init__()
-        if (data_space is None or not data_space_val) and val_data_source is not None: val_data_source.__post_init__()
-        if (data_space is None or not data_space_test) and test_data_source is not None: test_data_source.__post_init__()
+        if (data_space is None or not data_space_train) and train_data_source is not None:
+            train_data_source.__post_init__()
+            self.train_init = True
+        if (data_space is None or not data_space_val) and val_data_source is not None:
+            val_data_source.__post_init__()
+            self.val_init = True
+        if (data_space is None or not data_space_test) and test_data_source is not None:
+            test_data_source.__post_init__()
+            self.test_init = True
 
         self.train_data_source = train_data_source
         self.val_data_source = val_data_source
@@ -108,40 +121,48 @@ class BaseDataModule(L.LightningDataModule):
         if self.data_space is not None:
             if self.train_data_source is not None and self.data_space_train and self.TRAIN_NAMESPACE not in self.data_space:
                 self.train_data_source.__post_init__()
+                self.train_init = True
                 self.data_space[self.TRAIN_NAMESPACE] = self.train_data_source.__getstate__()
             if self.val_data_source is not None and self.data_space_val and self.VAL_NAMESPACE not in self.data_space:
                 self.val_data_source.__post_init__()
+                self.val_init = True
                 self.data_space[self.VAL_NAMESPACE] = self.val_data_source.__getstate__()
             if self.test_data_source is not None and self.data_space_test and self.TEST_NAMESPACE not in self.data_space:
                 self.test_data_source.__post_init__()
+                self.test_init = True
                 self.data_space[self.TEST_NAMESPACE] = self.test_data_source.__getstate__()
 
     def setup(self, stage: str) -> None:
         if self.data_space is not None:
             # post init
             if stage == 'fit':
-                if self.data_space_train:
+                if self.data_space_train and self.train_init is False:
                     self.train_data_source.__setstate__(self.data_space[self.TRAIN_NAMESPACE])
-                if self.data_space_val:
+                    self.train_init = True
+                if self.data_space_val and self.val_init is False:
                     self.val_data_source.__setstate__(self.data_space[self.VAL_NAMESPACE])
+                    self.val_init = True
             elif stage == 'validate':
-                if self.data_space_val:
+                if self.data_space_val and self.val_init is False:
                     self.val_data_source.__setstate__(self.data_space[self.VAL_NAMESPACE])
+                    self.val_init = True
             elif stage == 'test':
-                if self.data_space_test:
+                if self.data_space_test and self.test_init is False:
                     self.test_data_source.__setstate__(self.data_space[self.TEST_NAMESPACE])
+                    self.test_init = True
 
     def worker_init_fn(self, worker_id: int) -> None:
         import torch.multiprocessing
         torch.multiprocessing.set_sharing_strategy('file_system')
-        seed = uuid.uuid4().int % 2 ** 32
-        L.seed_everything(seed)
+        # seed = uuid.uuid4().int % 2 ** 32
+        # L.seed_everything(seed)
 
     def train_dataloader(self):
         return DataLoader(
             dataset=self.train_data_source,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            shuffle=True,
             drop_last=True,
             worker_init_fn=self.worker_init_fn if self.num_workers != 0 else None,
             persistent_workers=self.num_workers != 0,

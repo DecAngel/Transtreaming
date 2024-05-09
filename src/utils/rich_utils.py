@@ -18,13 +18,14 @@ log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 def print_config_tree(
     cfg: DictConfig,
     print_order: Sequence[str] = (
-        "data",
+        "datamodule",
         "model",
         "callbacks",
         "logger",
         "trainer",
         "paths",
         "extras",
+        "services",
     ),
     resolve: bool = False,
     save_to_file: bool = False,

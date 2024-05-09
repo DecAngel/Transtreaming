@@ -10,15 +10,20 @@ import torch.nn.functional as F
 
 import math
 
-from ..types import YOLOXPredDict, YOLOXLossDict, PYRAMID, COORDINATE, LABEL, BaseHead
-from ..layers.network_blocks import BaseConv, DWConv
-from ..layers.iou_loss import IOUloss
-from .yolox_head import bboxes_iou, yolox_postprocess, clip_or_pad_along
-from ravt.core.utils.array_operations import xyxy2cxcywh
-from ravt.core.utils.lightning_logger import ravt_logger as logger
+from src.primitives.batch import BatchDict, PYRAMID, COORDINATE, LABEL, SIZE, LossDict, BBoxDict
+from src.primitives.model import BaseHead
+from src.models.layers.network_blocks import BaseConv, DWConv
+from src.models.layers.iou_loss import IOUloss
+from src.models.heads.yolox_head import bboxes_iou, yolox_postprocess
+from src.utils.array_operations import xyxy2cxcywh, clip_or_pad_along
+from src.utils.pylogger import RankedLogger
+
+logger = RankedLogger(__name__, rank_zero_only=False)
 
 
 class TALHead(BaseHead):
+    require_prev_frame = True
+
     def __init__(
         self,
         num_classes: int = 8,
@@ -149,6 +154,13 @@ class TALHead(BaseHead):
         )
         self.max_objs = max_objs
 
+        def init_yolo(M):
+            for m in M.modules():
+                if isinstance(m, torch.nn.BatchNorm2d):
+                    m.eps = 1e-3
+                    m.momentum = 0.03
+        self.apply(init_yolo)
+
     def initialize_biases(self, prior_prob):
         for conv in self.cls_preds + self.obj_preds:
             b = conv.bias.view(self.n_anchors, -1)
@@ -160,10 +172,10 @@ class TALHead(BaseHead):
             features: PYRAMID,
             gt_coordinates: Optional[COORDINATE] = None,
             gt_labels: Optional[LABEL] = None,
-            shape: Optional[Tuple[int, int]] = (600, 960),
-    ) -> Union[YOLOXPredDict, YOLOXLossDict]:
+            shape: Optional[SIZE] = None,
+    ) -> Union[BBoxDict, LossDict]:
         if self.training:
-            B, T, _, _, _ = features[0].size()
+            # B, T, _, _, _ = features[0].size()
             features = [f.flatten(0, 1) for f in features]
             gt_coordinates_1 = gt_coordinates[:, :-1].flatten(0, 1)
             gt_coordinates_2 = gt_coordinates[:, 1:].flatten(0, 1)
@@ -193,12 +205,13 @@ class TALHead(BaseHead):
             pred_labels = pred[..., 6]
             if shape is not None:
                 # prevent inf
+                shape = shape[0].cpu().tolist()
                 pred_coordinates[..., [0, 2]] = pred_coordinates[..., [0, 2]].clamp(min=0, max=shape[1])
                 pred_coordinates[..., [1, 3]] = pred_coordinates[..., [1, 3]].clamp(min=0, max=shape[0])
             return {
-                'pred_coordinates': pred_coordinates.unflatten(0, (B, T)).detach().float(),
-                'pred_probabilities': pred_probabilities.unflatten(0, (B, T)).detach().float(),
-                'pred_labels': pred_labels.unflatten(0, (B, T)).detach().long(),
+                'coordinate': pred_coordinates.unflatten(0, (B, T)).detach().float(),
+                'label': pred_labels.unflatten(0, (B, T)).detach().long(),
+                'probability': pred_probabilities.unflatten(0, (B, T)).detach().float(),
             }
 
     def forward_impl(self, xin, labels=None, imgs=None):

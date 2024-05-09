@@ -1,7 +1,7 @@
-from typing import TypedDict, Dict, Any, Tuple, NotRequired, Union, List
+from typing import TypedDict, Tuple, Union, List
 
 import torch
-from jaxtyping import UInt8, Int32, Float32, Float, Int
+from jaxtyping import UInt8, Float, Int, Shaped
 
 
 META = Int[torch.Tensor, '*batch']
@@ -11,8 +11,8 @@ PYRAMID = Tuple[Float[torch.Tensor, '*batch_time channels height width'], ...]
 COORDINATE = Float[torch.Tensor, '*batch_time max_objs coords_xyxy=4']
 PROBABILITY = Float[torch.Tensor, '*batch_time max_objs']
 LABEL = Int[torch.Tensor, '*batch_time max_objs']
-TIME = Float[torch.Tensor, '*batch time']
-SIZE = Int[torch.Tensor, 'hw=2']
+TIME = Shaped[torch.Tensor, '*batch time']
+SIZE = Int[torch.Tensor, '*batch hw=2']
 SCALAR = Float[torch.Tensor, '']
 
 

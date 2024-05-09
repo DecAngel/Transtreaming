@@ -1,12 +1,15 @@
+import copy
+
 import math
 from typing import Dict, Any
 
-import pytorch_lightning as pl
+import lightning as L
 import torch
-from pytorch_lightning import Callback
+from lightning import Callback
 from torch import nn
 
 from src.utils.pylogger import RankedLogger
+from src.primitives.model import BaseModel
 
 logger = RankedLogger(__name__, rank_zero_only=True)
 
@@ -34,10 +37,13 @@ class ModelEmaV2(nn.Module):
     This class is sensitive where it is initialized in the sequence of model init,
     GPU assignment and distributed training wrappers.
     """
-    def __init__(self, model: pl.LightningModule, decay=0.9999):
+    def __init__(self, model: BaseModel, decay=0.9999):
         super(ModelEmaV2, self).__init__()
         # make a copy of the model for accumulating moving average of weights
-        self.module = model.__class__(**model.hparams)
+        trainer = model.backbone.trainer
+        model.backbone.trainer = model.neck.trainer = model.head.trainer = None
+        self.module = model.__class__(copy.deepcopy(model.backbone), copy.deepcopy(model.neck), copy.deepcopy(model.head))
+        model.backbone.trainer = model.neck.trainer = model.head.trainer = trainer
         self.module.load_state_dict(model.state_dict())
         self.module.eval()
         self.decay = decay
@@ -76,14 +82,14 @@ class EMACallback(Callback):
         "Initialize `ModelEmaV2` from timm to keep a copy of the moving average of the weights"
         self.ema = ModelEmaV2(pl_module, decay=self.decay)
 
-    def on_validation_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+    def on_validation_start(self, trainer: "L.Trainer", pl_module: "L.LightningModule") -> None:
         # disable EMA
         self.ema = None
 
-    def on_test_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+    def on_test_start(self, trainer: "L.Trainer", pl_module: "L.LightningModule") -> None:
         self.on_validation_start(trainer, pl_module)
 
-    def on_predict_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+    def on_predict_start(self, trainer: "L.Trainer", pl_module: "L.LightningModule") -> None:
         self.on_validation_start(trainer, pl_module)
 
     def on_train_batch_end(
@@ -129,14 +135,14 @@ class EMACallback(Callback):
             logger.info("End of training. Model weights replaced with the EMA version.")
 
     def on_save_checkpoint(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", checkpoint: Dict[str, Any]
+        self, trainer: "L.Trainer", pl_module: "L.LightningModule", checkpoint: Dict[str, Any]
     ) -> None:
         if self.ema is not None:
             checkpoint['callbacks'][self.__class__.__name__] = {'state_dict_ema_train': pl_module.state_dict()}
             checkpoint['state_dict'] = self.ema.module.state_dict()
 
     def on_load_checkpoint(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", checkpoint: Dict[str, Any]
+        self, trainer: "L.Trainer", pl_module: "L.LightningModule", checkpoint: Dict[str, Any]
     ) -> None:
         if self.ema is not None:
             train_params = checkpoint['callbacks'][self.__class__.__name__]['state_dict_ema_train']

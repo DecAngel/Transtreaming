@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..layers.deform_conv import DeformConv2dPack
+from src.models.layers.deform_conv import DeformConv2dPack
 
 
 class SiLU(nn.Module):

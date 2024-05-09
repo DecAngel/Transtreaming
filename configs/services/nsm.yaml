@@ -1,0 +1,2 @@
+nsm:
+  _target_: src.services.nsm_service.NSMService

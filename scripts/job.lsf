@@ -1,0 +1,11 @@
+#!/bin/bash
+#BSUB -J TRAQue
+#BSUB -o %J.out
+#BSUB -e %J.err
+#BSUB -q gpu_v100
+#BSUB -gpu "num=4:mode=exclusive_process:aff=yes"
+module load anaconda3
+source activate traque
+module load cuda-11.1
+module load gcc-9.3.0
+python src/train.py experiment=streamyolo_s trainer=ddp

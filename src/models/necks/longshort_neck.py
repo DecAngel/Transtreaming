@@ -45,11 +45,13 @@ class LongShortNeck(BaseNeck):
     def forward(
             self,
             features: PYRAMID,
-            past_time_constant: Optional[TIME] = None,
-            future_time_constant: Optional[TIME] = None,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
     ) -> PYRAMID:
-        B, T, _, _, _ = features[0].size()
-        assert T == 4
+        B, TP, _, _, _ = features[0].size()
+        _, TF = future_clip_ids.size()
+
+        assert TP == 4
         outputs = []
         for i, f in enumerate(features):
             l3, l2, l1, short = f.unbind(1)

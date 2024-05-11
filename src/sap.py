@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
@@ -25,6 +26,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 #
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
+torch.set_float32_matmul_precision('high')
 
 from src.utils import (
     RankedLogger,
@@ -54,29 +56,27 @@ import multiprocessing as mp
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 
-import cv2
 import numpy as np
 import torch
 from pycocotools.coco import COCO
 from sap_toolkit.client import EvalClient
 from sap_toolkit.generated import eval_server_pb2
-from torch.utils.data import default_collate
 from tqdm import tqdm
+from kornia.geometry.transform import resize
 
-from ..base_classes import BaseSystem
-from ..constants import BatchTDict, BatchNDict
-from ..utils.lightning_logger import ravt_logger as logger
-from ..utils.array_operations import remove_pad_along
-from ..utils.collection_operations import reverse_collate, tensor2ndarray, select_collate, to_device
-from ..configs import output_sap_log_dir
+from src.primitives.model import BaseModel
+from src.primitives.sap_strategy import BaseSAPStrategy
+from src.primitives.batch import IMAGE, BBoxDict
+from src.utils.array_operations import remove_pad_along
+from src.utils.time_recorder import TimeRecorder
 
 
 class SAPServer:
-    def __init__(self, data_dir: Path, ann_file: Path, output_dir: Path, sap_factor: float = 1.0):
+    def __init__(self, data_dir: str, ann_file: str, output_dir: str, sap_factor: float = 1.0):
         super().__init__()
-        self.data_dir = data_dir
-        self.ann_file = ann_file
-        self.output_dir = output_dir
+        self.data_dir = Path(data_dir)
+        self.ann_file = Path(ann_file)
+        self.output_dir = Path(output_dir)
         self.sap_factor = sap_factor
         self.config_path: Optional[Path] = None
         self.proc: Optional[subprocess.Popen] = None
@@ -138,6 +138,7 @@ class SAPServer:
         output_dict = {}
         while True:
             output = self.proc.stdout.readline()
+            log.info(output)
             if '=' in output:
                 o = output.rsplit('=')
                 try:
@@ -166,27 +167,46 @@ class SAPClient(EvalClient):
         print('Shutdown', flush=True)
 
 
-# TODO: sap not completed
-def sap(
-        system: BaseSystem,
-        sap_factor: float = 1.0,
-        dataset_resize_ratio: float = 2,
-        dataset_fps: int = 30,
-        device_id: Optional[int] = None,
-        debug: bool = __debug__,
-) -> Dict[str, Any]:
+
+
+
+@task_wrapper
+def sap(cfg: DictConfig) -> Dict[str, float]:
     if platform.system() != 'Linux':
         raise EnvironmentError('sAP evaluation is only supported on Linux!')
 
-    system = system.eval().to(torch.device(f'cuda:{device_id or 0}'))
+    log.info(f"Instantiating model <{cfg.model._target_}>")
+    model: BaseModel = hydra.utils.instantiate(cfg.model)
+
+    log.info(f"Instantiating sap_strategy <{cfg.sap_strategy._target_}>")
+    strategy: BaseSAPStrategy = hydra.utils.instantiate(cfg.sap_strategy)
+
+    # load ckpt or pth
+    path = Path(cfg.ckpt_path).resolve()
+    log.info(f"Loading model from {str(path)}")
+    if path.suffix == '.pth':
+        model.load_from_pth(str(path))
+    elif path.suffix == '.ckpt':
+        model.load_from_ckpt(str(path))
+    else:
+        raise ValueError(f"Unsupported file type {path.suffix}")
+
+    data_dir = cfg.get('data_dir')
+    ann_file = cfg.get('ann_file')
+    output_dir = cfg.get('output_dir')
+
+    sap_factor = cfg.get('sap_factor', 1.0)
+    dataset_resize_ratio = cfg.get('dataset_resize_ratio', 2)
+    dataset_fps = cfg.get('dataset_fps', 30)
+    device_id = cfg.get('device_id', 0)
+    model = model.eval().half().to(torch.device(f'cuda:{device_id}'))
 
     with SAPServer(
-            data_dir=system.data_sources['test'].img_dir,
-            ann_file=system.data_sources['test'].ann_file,
-            output_dir=output_sap_log_dir,
+            data_dir=data_dir,
+            ann_file=ann_file,
+            output_dir=output_dir,
             sap_factor=sap_factor
     ) as server:
-        # start client
         client_state = (
             mp.Value('i', -1, lock=True),
             mp.Event(),
@@ -200,142 +220,108 @@ def sap(
         try:
             # load coco dataset
             with contextlib.redirect_stdout(io.StringIO()):
-                coco = COCO(str(system.data_sources['test'].ann_file))
+                coco = COCO(ann_file)
             seqs = coco.dataset['sequences']
 
-            def resize_image(img: np.ndarray) -> np.ndarray:
-                h, w, c = img.shape
-                return cv2.resize(
-                    img, (w // dataset_resize_ratio, h // dataset_resize_ratio)
-                )
+            frame_id_prev = None
+            def recv_fn(tr: TimeRecorder) -> Optional[Tuple[int, IMAGE]]:
+                nonlocal frame_id_prev
+                tr.record('others')
+                while True:
+                    frame_id_next, frame = client.get_frame()
+                    if frame_id_next is not None:
+                        if frame_id_prev is None:
+                            frame_id_delta = frame_id_next
+                            frame_id_prev = frame_id_next
+                        elif frame_id_next != frame_id_prev:
+                            frame_id_delta = frame_id_next - frame_id_prev
+                            frame_id_prev = frame_id_next
+                        else:
+                            continue
+                        tr.record('recv_fn_wait')
 
-            def recv_fn() -> Optional[BatchTDict]:
-                frame_id_next, frame = client.get_frame()
-                if frame_id_next is not None:
-                    original_size = np.array(frame.shape[:2])
-                    frame = resize_image(frame)[..., [2, 1, 0]].transpose(2, 0, 1)
-                    return to_device(default_collate([{
-                        'image_id': np.array(frame_id_next),
-                        'seq_id': np.array(0),
-                        'frame_id': np.array(frame_id_next),
-                        'image': default_collate([{
-                            'image': frame,
-                            'original_size': original_size,
-                            'clip_id': np.array(0),
-                        }])
-                    }]), system.device)
-                else:
-                    return None
+                        frame = torch.from_numpy(frame).permute(2, 0, 1)[None, [2, 1, 0]]
+                        tr.record('recv_fn_tensor')
 
-            def send_fn(batch: BatchTDict) -> None:
-                bbox = tensor2ndarray(select_collate(select_collate(batch, 0)['bbox'], 0))
-                coordinate = remove_pad_along(bbox['coordinate'], axis=0) * dataset_resize_ratio
-                probability = bbox['probability'][:coordinate.shape[0]]
-                label = bbox['label'][:coordinate.shape[0]]
+                        frame = frame.to(dtype=torch.float16, device=f'cuda:{device_id}')
+                        tr.record('recv_fn_cuda_half')
+
+                        frame = resize(frame, (600, 960), interpolation='bilinear')[None]
+                        tr.record('recv_fn_resize')
+
+                        # frame = F.interpolate(frame, scale_factor=(1/dataset_resize_ratio, 1/dataset_resize_ratio), mode='bilinear')
+                        # frame = resize_image(frame)[..., [2, 1, 0]].transpose(2, 0, 1)
+                        return frame_id_delta, frame
+                    else:
+                        return None
+
+            def send_fn(bbox: BBoxDict, tr: TimeRecorder) -> None:
+                tr.record('others')
+                coordinate = remove_pad_along(bbox['coordinate'][0, 0].cpu().numpy(), axis=0) * dataset_resize_ratio
+                probability = bbox['probability'][0, 0, :coordinate.shape[0]].cpu().numpy()
+                label = bbox['label'][0, 0, :coordinate.shape[0]].cpu().numpy()
+                tr.record('send_fn_convert')
                 client.send_result_to_server(coordinate, probability, label)
+                tr.record('send_fn_send')
                 return None
+
+            def process_fn(*args, tr: TimeRecorder, **kwargs):
+                tr.record('others')
+                res = model.inference(*args, **kwargs)
+                tr.record('process_fn')
+                return res
 
             def time_fn(start_time: float):
                 return (time.perf_counter() - start_time) * dataset_fps * sap_factor
 
             # warm_up
-            for _ in range(2):
-                system.inference(to_device(system.example_input_array[0], system.device), None)
-                # system.inference(resize_image(np.zeros((1200, 1920, 3), dtype=np.uint8)), None)
-            torch.cuda.synchronize(device=system.device)
 
-            for i, seq_id in enumerate(tqdm(seqs)):
-                client.request_stream(seq_id)
-                t_start = client.get_stream_start_time()
-                system.strategy.infer_sequence(
-                    input_fn=recv_fn,
-                    process_fn=system.inference,
-                    output_fn=send_fn,
-                    time_fn=functools.partial(time_fn, t_start)
-                )
-                client.stop_stream()
-                if i == 0:
-                    system.strategy.plot_process_time()
+            with torch.inference_mode():
+                buffer = None
+                example_input = {
+                    'image': torch.randint(0, 255, size=(1, 1, 3, 600, 960), dtype=torch.float16, device=model.device),
+                    'past_clip_ids': torch.tensor([[-1, 0]], dtype=torch.long, device=model.device),
+                    'future_clip_ids': torch.tensor([[1]], dtype=torch.long, device=model.device),
+                }
+                for i in range(3):
+                    _, buffer = model.inference(
+                        **example_input,
+                        buffer=buffer,
+                    )
+
+            torch.cuda.synchronize(device=model.device)
+
+            with torch.inference_mode():
+                for i, seq_id in enumerate(tqdm(seqs)):
+                    with TimeRecorder(f'seq_{i}', mode='avg') as tr:
+                        frame_id_prev = None
+                        client.request_stream(seq_id)
+                        client.get_stream_start_time()  # wait
+                        t_start = time.perf_counter()
+                        tr.record('request_stream')
+                        strategy.infer_sequence(
+                            input_fn=functools.partial(recv_fn, tr=tr),
+                            process_fn=functools.partial(process_fn, tr=tr),
+                            output_fn=functools.partial(send_fn, tr=tr),
+                            time_fn=functools.partial(time_fn, start_time=t_start)
+                        )
+                        client.stop_stream()
+                        if i == 0:
+                            strategy.plot_process_time()
+
             filename = f'{int(time.time()) % 1000000000}.json'
             client.generate(filename)
             return server.get_result(filename)
 
         except KeyboardInterrupt as e:
-            logger.warning('Ctrl+C detected. Shutting down sAP server & client.', exc_info=e)
+            log.warning('Ctrl+C detected. Shutting down sAP server & client.', exc_info=e)
             raise
         finally:
             client.close()
 
 
-
-@task_wrapper
-def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Trains the model. Can additionally evaluate on a testset, using best weights obtained during
-    training.
-
-    This method is wrapped in optional @task_wrapper decorator, that controls the behavior during
-    failure. Useful for multiruns, saving info about the crash, etc.
-
-    :param cfg: A DictConfig configuration composed by Hydra.
-    :return: A tuple with metrics and dict with all instantiated objects.
-    """
-    # set seed for random number generators in pytorch, numpy and python.random
-    if cfg.get("seed"):
-        L.seed_everything(cfg.seed, workers=True)
-
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
-
-    log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
-
-    log.info("Instantiating callbacks...")
-    callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
-
-    log.info("Instantiating loggers...")
-    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
-
-    log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
-
-    object_dict = {
-        "cfg": cfg,
-        "datamodule": datamodule,
-        "model": model,
-        "callbacks": callbacks,
-        "logger": logger,
-        "trainer": trainer,
-    }
-
-    if logger:
-        log.info("Logging hyperparameters!")
-        log_hyperparameters(object_dict)
-
-    if cfg.get("train"):
-        log.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
-
-    train_metrics = trainer.callback_metrics
-
-    if cfg.get("test"):
-        log.info("Starting testing!")
-        ckpt_path = trainer.checkpoint_callback.best_model_path
-        if ckpt_path == "":
-            log.warning("Best ckpt not found! Using current weights for testing...")
-            ckpt_path = None
-        trainer.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
-        log.info(f"Best ckpt path: {ckpt_path}")
-
-    test_metrics = trainer.callback_metrics
-
-    # merge train and test metrics
-    metric_dict = {**train_metrics, **test_metrics}
-
-    return metric_dict, object_dict
-
-
-@hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
-def main(cfg: DictConfig) -> Optional[float]:
+@hydra.main(version_base="1.3", config_path="../configs", config_name="sap.yaml")
+def main(cfg: DictConfig) -> Dict[str, float]:
     """Main entry point for training.
 
     :param cfg: DictConfig configuration composed by Hydra.
@@ -345,16 +331,10 @@ def main(cfg: DictConfig) -> Optional[float]:
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
 
-    # train the model
-    metric_dict, _ = train(cfg)
+    # run sap
+    metric_dict = sap(cfg)
 
-    # safely retrieve metric value for hydra-based hyperparameter optimization
-    metric_value = get_metric_value(
-        metric_dict=metric_dict, metric_name=cfg.get("optimized_metric")
-    )
-
-    # return optimized metric
-    return metric_value
+    return metric_dict
 
 
 if __name__ == "__main__":

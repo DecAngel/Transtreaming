@@ -14,8 +14,9 @@ class IdentityNeck(BaseNeck):
     def forward(
             self,
             features: PYRAMID,
-            past_time_constant: Optional[TIME] = None,
-            future_time_constant: Optional[TIME] = None
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
     ) -> PYRAMID:
-        TF = future_time_constant.size(-1)
+        B, TP, _, _, _ = features[0].size()
+        _, TF = future_clip_ids.size()
         return tuple(f[:, [-1]*TF] for f in features)

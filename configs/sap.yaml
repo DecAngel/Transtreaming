@@ -4,12 +4,9 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - datamodule: dummy
+  - optional datamodule: dummy
   - model: dummy
-  - optional sap_strategy: null
-  - callbacks: default_train
-  - logger: tensorboard # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
-  - trainer: gpu
+  - sap_strategy: normal
   - paths: default
   - extras: default
   - hydra: default
@@ -17,9 +14,6 @@ defaults:
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
   - experiment: null
-
-  # config for hyperparameter optimization
-  - hparams_search: null
 
   # optional local config for machine/user specific settings
   # it's optional since it doesn't need to exist and is excluded from version control
@@ -29,22 +23,20 @@ defaults:
   - debug: null
 
 # task name, determines output directory path
-task_name: "train"
+task_name: "sap"
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
 tags: ["dev"]
 
-# set False to skip model training
-train: True
-
-# evaluate on test set, using best model weights achieved during training
-# lightning chooses best weights based on the metric specified in checkpoint callback
-test: True
-
 # simply provide checkpoint path to resume training, or provide pth path as pretrained model
 ckpt_path: null
 
-# seed for random number generators in pytorch, numpy and python.random
-seed: null
+data_dir: ${paths.data_dir}argoverse/Argoverse-1.1/tracking
+ann_file: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+output_dir: ${paths.output_dir}
+sap_factor: 1.0
+dataset_resize_ratio: 2
+dataset_fps: 30
+device_id: 0

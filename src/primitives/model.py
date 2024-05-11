@@ -13,9 +13,27 @@ from src.primitives.batch import (
     BufferDict, SIZE
 )
 from src.utils.pylogger import RankedLogger
+from src.utils.array_operations import slice_along
 
 
 logger = RankedLogger(__name__, rank_zero_only=True)
+
+
+def concat_pyramids(pyramids: List[PYRAMID], dim: int = 1) -> PYRAMID:
+    return tuple(
+        torch.cat([
+            p[i]
+            for p in pyramids
+        ], dim=dim)
+        for i in range(len(pyramids[0]))
+    )
+
+
+def slice_pyramid(pyramid: PYRAMID, start: int, end: int, step: int = 1, dim: int = 1) -> PYRAMID:
+    return tuple(
+        slice_along(p, dim, start, end, step)
+        for p in pyramid
+    )
 
 
 class BlockMixin:
@@ -57,8 +75,8 @@ class BaseNeck(BlockMixin, nn.Module):
     def forward(
             self,
             features: PYRAMID,
-            past_clip_ids: Optional[TIME] = None,
-            future_clip_ids: Optional[TIME] = None,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
     ) -> PYRAMID:
         raise NotImplementedError()
 
@@ -213,38 +231,48 @@ class BaseModel(L.LightningModule):
             image: IMAGE,
             past_clip_ids: TIME,
             future_clip_ids: TIME,
-            buffer: Optional[BufferDict] = None,
-            buffer_delay: Optional[int] = None,
+
+            has_buffer: bool = False,
+            buffer: Optional[PYRAMID] = None,
+
             gt_coordinate: Optional[COORDINATE] = None,
             gt_label: Optional[LABEL] = None,
             shape: Optional[SIZE] = None,
-    ) -> Tuple[Union[BBoxDict, LossDict], BufferDict]:
-        if buffer is not None:
-            # requires buffer, batch_size must be 1
-            assert image.size(0) == 1
-            buffer_list = buffer['buffer_list'] if 'buffer_list' in buffer else []
-            buffer_clip_id_list = buffer['buffer_clip_id_list'] if 'buffer_clip_id_list' in buffer else []
-            buffer_clip_id_list = [b - buffer_delay for b in buffer_clip_id_list]
-
-            new_buffer_list = []
-            new_buffer_clip_id_list = []
-            for i, p in enumerate(past_clip_ids[0].cpu().tolist()):
-                if p in buffer_clip_id_list:
-                    new_buffer_list.append(buffer_list[buffer_clip_id_list.index(p)])
-                else:
-                    new_buffer_list.append(self.backbone(image[:, i:i+1]))
-                new_buffer_clip_id_list.append(p)
-            features_p = tuple([torch.cat([f[i] for f in new_buffer_list], dim=1) for i in range(len(new_buffer_list[0]))])
-            new_buffer = {
-                'buffer_list': new_buffer_list,
-                'buffer_clip_id_list': new_buffer_clip_id_list
-            }
-        else:
-            features_p = self.backbone(image)
-            new_buffer = None
-
-        pci = past_clip_ids[:, :-1].float()
+    ) -> Tuple[Union[BBoxDict, LossDict], Optional[PYRAMID]]:
+        """
+        Image:                     image
+        Buffer:     buffer
+        BBox:                                       pred
+        Clip_id:    |---past_clip_ids---|  |---future_clip_ids---|
+        """
+        # check
+        B, TI, C, H, W = image.size()
+        pci = past_clip_ids.float()
         fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
+        _, TP = pci.size()
+        _, TF = fci.size()
+
+        if has_buffer:
+            # requires buffer, batch_size must be 1
+            assert B == 1
+
+        # inference
+        features_p = self.backbone(image)
+        new_buffer = None
+
+        # append buffer
+        if has_buffer:
+            if buffer is not None:
+                # append buffer to features_p and past_time_constant
+                features_p = concat_pyramids([buffer, features_p], dim=1)
+            # pad
+            TB = features_p[0].size(1)
+            if TB < TP:
+                features_p = concat_pyramids([slice_pyramid(features_p, dim=1, start=0, end=1)]*(TP-TB)+[features_p], dim=1)
+            elif TB > TP:
+                features_p = slice_pyramid(features_p, dim=1, start=TB-TP, end=TB)
+            new_buffer = features_p
+
         features_f = self.neck(features_p, pci, fci)
 
         return self.head(features_f, gt_coordinate, gt_label, shape), new_buffer
@@ -279,11 +307,18 @@ class BaseModel(L.LightningModule):
             image: IMAGE,
             past_clip_ids: TIME,
             future_clip_ids: TIME,
-            buffer: Optional[BufferDict] = None,
-            buffer_delay: Optional[int] = None,
-    ) -> Tuple[BBoxDict, BufferDict]:
+            buffer: Optional[PYRAMID] = None,
+    ) -> Tuple[BBoxDict, PYRAMID]:
         with torch.inference_mode():
-            return self._forward_impl(image, past_clip_ids, future_clip_ids, buffer, buffer_delay)
+            shape = torch.tensor([image.shape[-2:]], dtype=torch.long, device=self.device)
+            return self._forward_impl(
+                image=image,
+                past_clip_ids=past_clip_ids,
+                future_clip_ids=future_clip_ids,
+                has_buffer=True,
+                buffer=buffer,
+                shape=shape,
+            )
 
     def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         output: LossDict = self(batch)

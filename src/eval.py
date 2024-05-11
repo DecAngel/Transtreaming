@@ -26,7 +26,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 #
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
-torch.set_float32_matmul_precision('highest')
+torch.set_float32_matmul_precision('high')
 
 from src.utils import (
     RankedLogger,
@@ -97,7 +97,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="eval.yaml")
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> float:
     """Main entry point for evaluation.
 
     :param cfg: DictConfig configuration composed by Hydra.
@@ -107,8 +107,11 @@ def main(cfg: DictConfig) -> None:
     extras(cfg)
 
     metric_dict, object_dict = evaluate(cfg)
+    metric_dict = {k: v.cpu().item() for k, v in metric_dict.items()}
 
-    log.info(f'Metric Dict: {json.dumps({k: v.cpu().item() for k, v in metric_dict.items()}, indent=2)}')
+    # output result
+    log.info(f'Metric Dict: {json.dumps(metric_dict, indent=2)}')
+    return metric_dict['test_mAP'] if 'test_mAP' in metric_dict else metric_dict['val_mAP']
 
 
 if __name__ == "__main__":

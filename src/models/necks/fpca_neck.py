@@ -11,6 +11,14 @@ from src.primitives.batch import PYRAMID, TIME
 from src.primitives.model import BaseNeck
 
 
+def pyramid2windows(
+        pyramid: PYRAMID,
+        window_size: int,
+        shift: bool = False,
+):
+    pass
+
+
 def features2windows(
         features: Float[torch.Tensor, 'batch time channel height width'],
         window_size: Tuple[int, int],
@@ -273,23 +281,15 @@ class FPCANeck(BaseNeck):
     def forward(
             self,
             features: PYRAMID,
-            past_time_constant: Optional[TIME] = None,
-            future_time_constant: Optional[TIME] = None
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
     ) -> PYRAMID:
-        if past_time_constant is None:
-            TP = features[0].size(1) - 1
-            past_time_constant = torch.arange(
-                -TP, 0, step=1, dtype=torch.float32, device=features[0].device
-            )[None, ...]
-        if future_time_constant is None:
-            future_time_constant = torch.tensor([[1]], dtype=torch.float32, device=features[0].device)
-        TF = future_time_constant.size(1)
+        B, TP, _, _, _ = features[0].size()
+        _, TF = future_clip_ids.size()
 
         outputs = []
         for f, block in zip(features, self.blocks):
-            position = self.rpe(past_time_constant, future_time_constant)
+            position = self.rpe(past_clip_ids[:, :-1], future_clip_ids)
             outputs.append(block(f[:, -1:].expand(-1, TF, -1, -1, -1), f[:, :-1], position))
 
         return tuple(outputs)
-
-

@@ -17,10 +17,13 @@ class DummyNeck(BaseNeck):
     def forward(
             self,
             features: PYRAMID,
-            past_time_constant: Optional[TIME] = None,
-            future_time_constant: Optional[TIME] = None
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
     ) -> PYRAMID:
+        B, TP, _, _, _ = features[0].size()
+        _, TF = future_clip_ids.size()
+
         logger.debug(f'Input shape: {[tuple(f.shape) for f in features]}')
-        logger.debug(f'Input time: {past_time_constant[0].cpu().tolist()}, {future_time_constant[0].cpu().tolist()}')
-        TF = future_time_constant.size(-1)
+        logger.debug(f'Input time: {past_clip_ids[0].cpu().tolist()}, {future_clip_ids[0].cpu().tolist()}')
+        TF = future_clip_ids.size(-1)
         return tuple(f[:, [-1]*TF] for f in features)

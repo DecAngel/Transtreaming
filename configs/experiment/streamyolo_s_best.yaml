@@ -1,0 +1,44 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /datamodule: argoverse
+  - override /model: streamyolo_s
+  - override /strategy: normal
+  - _self_
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["argoverse", "streamyolo", "s"]
+
+seed: 12345
+
+ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s.pth
+
+datamodule:
+  train_data_source:
+    image_clip_ids: [ -1, 0 ]
+    bbox_clip_ids: [ 0, 1 ]
+  val_data_source:
+    image_clip_ids: [ -1, 0 ]
+    bbox_clip_ids: [ 1 ]
+  test_data_source:
+    image_clip_ids: [ -1, 0 ]
+    bbox_clip_ids: [ 1 ]
+
+strategy:
+  past_length: 2
+
+model:
+  optim:
+    lr: 0.0018
+    momentum: 0.91
+    weight_decay: 0.001
+  head:
+    conf_thre: 0.005
+    nms_thre: 0.5
+    ignore_thr: 0.7
+    ignore_value: 1.6

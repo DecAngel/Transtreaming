@@ -90,6 +90,7 @@ class BaseDataModule(L.LightningDataModule):
             data_space_test: bool = False,
             batch_size: int = 4,
             num_workers: int = 0,
+            loky: bool = False,
     ):
         super().__init__()
         self.train_init = False
@@ -116,6 +117,7 @@ class BaseDataModule(L.LightningDataModule):
         self.data_space_test = data_space_test
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.loky = loky
 
     def prepare_data(self):
         if self.data_space is not None:
@@ -166,6 +168,7 @@ class BaseDataModule(L.LightningDataModule):
             drop_last=True,
             worker_init_fn=self.worker_init_fn if self.num_workers != 0 else None,
             persistent_workers=self.num_workers != 0,
+            multiprocessing_context='fork' if self.loky else None,
         )
 
     def val_dataloader(self):
@@ -176,6 +179,7 @@ class BaseDataModule(L.LightningDataModule):
             drop_last=False,
             worker_init_fn=self.worker_init_fn if self.num_workers != 0 else None,
             persistent_workers=self.num_workers != 0,
+            multiprocessing_context='fork' if self.loky else None,
         )
 
     def test_dataloader(self):
@@ -186,4 +190,5 @@ class BaseDataModule(L.LightningDataModule):
             drop_last=False,
             worker_init_fn=self.worker_init_fn if self.num_workers != 0 else None,
             persistent_workers=self.num_workers != 0,
+            multiprocessing_context='fork' if self.loky else None,
         )

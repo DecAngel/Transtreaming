@@ -20,7 +20,7 @@ hydra-joblib-launcher==1.2.0
 ###mlflow
 ###comet-ml
 ###aim>=3.16.2  # no lower than 3.16.2, see https://github.com/aimhubio/aim/issues/2550
-tensorboard==2.16.2
+tensorboard==2.11.2
 
 # --------- others --------- #
 rootutils==1.0.7    # standardizing the project root setup
@@ -30,7 +30,9 @@ rootutils==1.0.7    # standardizing the project root setup
 sh==2.0.6; sys_platform == 'linux'                 # for running bash commands in some tests (linux/macos only)
 
 # --------- TRAQue specific --------- #
-# tensordict==0.4.0       # input data structure
+grpcio==1.46.0
+grpcio-tools==1.46.0
+protobuf==3.20.1
 kornia==0.7.2           # for data augmentations on gpu
 jaxtyping==0.2.22       # for typing annotation on tensors
 typeguard==3.0.2                            # type checking

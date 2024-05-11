@@ -35,7 +35,7 @@ grpcio-tools==1.46.0
 protobuf==3.20.1
 kornia==0.7.2           # for data augmentations on gpu
 jaxtyping==0.2.22       # for typing annotation on tensors
-typeguard==3.0.2                            # type checking
+typeguard==4.2.1                            # type checking
 pywin32; sys_platform == 'win32'            # for getting os resource info
 pycocotools==2.0.7      # for loading COCO jsons
 sap_toolkit==1.0.0      # for sap testing

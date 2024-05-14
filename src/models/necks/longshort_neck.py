@@ -9,13 +9,23 @@ from src.primitives.model import BaseNeck
 
 
 class LongShortNeck(BaseNeck):
+    state_dict_replace = [
+        ('long_backbone.group_0_jian2', 'neck.long_convs.0'),
+        ('long_backbone.group_0_jian1', 'neck.long_convs.1'),
+        ('long_backbone.group_0_jian0', 'neck.long_convs.2'),
+        ('short_backbone.group_0_jian2', 'neck.short_convs.0'),
+        ('short_backbone.group_0_jian1', 'neck.short_convs.1'),
+        ('short_backbone.group_0_jian0', 'neck.short_convs.2'),
+        ('jian2', 'neck.long_2_convs.0'),
+        ('jian1', 'neck.long_2_convs.1'),
+        ('jian0', 'neck.long_2_convs.2'),
+    ]
     input_frames: int = 4
     output_frames: int = 1
 
     def __init__(
             self,
             in_channels: Tuple[int, ...],
-            **kwargs,
     ):
         """Implement LongShortNet with N=3, delta=1, LSFM-Lf-Dil. (The best setting)
 

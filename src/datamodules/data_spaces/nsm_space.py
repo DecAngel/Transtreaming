@@ -15,6 +15,9 @@ import torch
 
 
 from src.primitives.datamodule import BaseDataSpace
+from src.utils.pylogger import RankedLogger
+
+log = RankedLogger(__name__, rank_zero_only=False)
 
 
 @dataclass
@@ -40,12 +43,16 @@ class NSMDataSpace(SharedMemoryManager, BaseDataSpace):
         if method == 'default':
             try:
                 self.connect()
+                log.info('existing sever found, connect as a client')
             except (TimeoutError, ConnectionResetError, ConnectionRefusedError):
                 self.start()
+                log.info('existing server not found, start server')
         elif method == 'connect':
             self.connect()
+            log.info('connect as a client')
         elif method == 'start':
             self.start()
+            log.info('start server')
 
     def start(self, initializer = None, initargs = ()):
         super().start(initializer, initargs)

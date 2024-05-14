@@ -1,3 +1,5 @@
+import contextlib
+
 import math
 from typing import Tuple, Union, Optional, Literal
 
@@ -9,14 +11,7 @@ import torch.nn.functional as F
 
 from src.primitives.batch import PYRAMID, TIME
 from src.primitives.model import BaseNeck
-
-
-def pyramid2windows(
-        pyramid: PYRAMID,
-        window_size: int,
-        shift: bool = False,
-):
-    pass
+from src.utils.time_recorder import TimeRecorder
 
 
 def features2windows(
@@ -67,7 +62,12 @@ def windows2features(
 
 
 class RelativePositionalEncoding3D(nn.Module):
-    def __init__(self, window_size: Tuple[int, int], num_heads: int) -> None:
+    def __init__(
+            self,
+            window_size: Tuple[int, int],
+            num_heads: int,
+
+    ) -> None:
         super(RelativePositionalEncoding3D, self).__init__()
         self.window_size = window_size
         self.num_heads = num_heads
@@ -241,15 +241,23 @@ class FPCABlock(nn.Module):
     ):
         B, TF, C, H, W = features_f.size()
 
-        res = features_f
-        for layer, shift in zip(self.layers, self.shifts):
-            query = features2windows(res, self.window_size, shift)
-            key = features2windows(features_p, self.window_size, shift)
-            value = features2windows(features_f[:, :1] - features_p, self.window_size, shift)
-            # value = key
-            res = layer(query, key, value, position)
-            res = windows2features(res, (TF, H, W), self.window_size, shift)
-        return res
+        check_time = False
+        with TimeRecorder('model', mode='sum') if check_time is True else contextlib.nullcontext() as tr:
+            res = features_f
+            for layer, shift in zip(self.layers, self.shifts):
+                query = features2windows(res, self.window_size, shift)
+                key = features2windows(features_p, self.window_size, shift)
+                value = features2windows(features_f[:, :1] - features_p, self.window_size, shift)
+                if check_time:
+                    tr.record('f2w')
+                # value = key
+                res = layer(query, key, value, position)
+                if check_time:
+                    tr.record('layer')
+                res = windows2features(res, (TF, H, W), self.window_size, shift)
+                if check_time:
+                    tr.record('w2f')
+            return res
 
 
 class FPCANeck(BaseNeck):
@@ -259,12 +267,15 @@ class FPCANeck(BaseNeck):
     def __init__(
             self,
             in_channels: Tuple[int, ...],
-            **kwargs,
+            num_heads: int = 4,
+            window_size: Tuple[int, int] = (8, 8),
+            depth: int = 1,
+
     ):
         super().__init__()
-        self.num_heads = 4
-        self.window_size = (8, 8)
-        self.depth = 1
+        self.num_heads = num_heads
+        self.window_size = window_size
+        self.depth = depth
         self.rpe = RelativePositionalEncoding3D(window_size=self.window_size, num_heads=self.num_heads)
         self.blocks = nn.ModuleList([
             FPCABlock(c, self.window_size, self.num_heads, self.depth)

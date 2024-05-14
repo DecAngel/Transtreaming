@@ -115,7 +115,6 @@ class YOLOXHead(BaseHead):
         max_objs: int = 100,
         act: str = "silu",
         depthwise: bool = False,
-        **kwargs
     ):
         """
         Args:

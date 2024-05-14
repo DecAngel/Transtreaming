@@ -5,14 +5,14 @@
 
 defaults:
   - override /datamodule: argoverse
-  - override /model: streamyolo_s
+  - override /model: traque_pafpn_s
   - override /sap_strategy: normal
   - _self_
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["argoverse", "streamyolo", "s"]
+tags: ["argoverse", "traque", "pafpn", "s"]
 
 seed: 12345
 
@@ -20,13 +20,13 @@ ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s.pth
 
 datamodule:
   train_data_source:
-    image_clip_ids: [ -1, 0 ]
+    image_clip_ids: [ -3, -2, -1, 0 ]
     bbox_clip_ids: [ 0, 1 ]
   val_data_source:
-    image_clip_ids: [ -1, 0 ]
+    image_clip_ids: [ -3, -2, -1, 0 ]
     bbox_clip_ids: [ 1 ]
   test_data_source:
-    image_clip_ids: [ -1, 0 ]
+    image_clip_ids: [ -3, -2, -1, 0 ]
     bbox_clip_ids: [ 1 ]
 
 model:
@@ -34,4 +34,4 @@ model:
     future_time_constant: [1]
 
 sap_strategy:
-  past_length: 2
+  past_length: 4

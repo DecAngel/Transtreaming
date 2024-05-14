@@ -6,6 +6,7 @@
 defaults:
   - override /datamodule: dummy
   - override /model: dummy
+  - override /sap_strategy: normal
   - override /callbacks: default
   - override /logger: null
   - override /trainer: default

@@ -32,7 +32,6 @@ class PAFPNBackbone(BaseBackbone):
             base_channel: int = 64,
             depthwise: bool = False,
             act='silu',
-            **kwargs
     ):
         # select FPN features
         super().__init__()

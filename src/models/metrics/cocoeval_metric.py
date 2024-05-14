@@ -32,6 +32,22 @@ except ImportError:
 logger.info(coco_eval_version)
 
 
+coco_eval_metric_names = [
+    ('Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = ', 'AP5095'),
+    ('Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = ', 'AP50'),
+    ('Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = ', 'AP75'),
+    ('Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = ', 'APsmall'),
+    ('Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = ', 'APmedium'),
+    ('Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = ', 'APlarge'),
+    ('Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = ', 'AR5095_1'),
+    ('Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = ', 'AR5095_10'),
+    ('Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = ', 'AR5095_100'),
+    ('Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = ', 'ARsmall'),
+    ('Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = ', 'ARmedium'),
+    ('Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = ', 'ARlarge'),
+]
+
+
 class COCOEvalMetric(BaseMetric):
     is_differentiable: bool = False
     higher_is_better: Optional[bool] = True
@@ -132,8 +148,8 @@ class COCOEvalMetric(BaseMetric):
 
                 cocoEval.summarize()
 
-            m = torch.tensor(float(cocoEval.stats[0]), dtype=torch.float32, device=self.device)
-            res[f'mAP_{t}'] = m
+            for v, (k1, k2) in zip(cocoEval.stats, coco_eval_metric_names):
+                res[f'T{t}_{k2}'] = torch.tensor(float(v), dtype=torch.float32, device=self.device)
             if i == 0:
-                res['mAP'] = m
+                res['mAP'] = torch.tensor(float(cocoEval.stats[0]), dtype=torch.float32, device=self.device)
         return res

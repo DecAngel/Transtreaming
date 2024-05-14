@@ -10,12 +10,11 @@ from src.primitives.model import BaseNeck
 
 class DFPMINNeck(BaseNeck):
     input_frames: int = 2
-    output_frames: int = 2
+    output_frames: int = 1
 
     def __init__(
             self,
             in_channels: Tuple[int, ...],
-            **kwargs,
     ):
         super().__init__()
         self.convs = nn.ModuleList([

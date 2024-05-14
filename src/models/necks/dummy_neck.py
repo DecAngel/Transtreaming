@@ -11,7 +11,7 @@ class DummyNeck(BaseNeck):
     input_frames: int = 4
     output_frames: int = 4
 
-    def __init__(self, **kwargs):
+    def __init__(self):
         super().__init__()
 
     def forward(

@@ -1,0 +1,67 @@
+_target_: src.primitives.model.BaseModel
+backbone:
+  _target_: src.models.backbones.drfpn_backbone.DRFPNBackbone
+  base_depth: 1
+  base_channel: 32
+  base_neck_depth: 3
+  hidden_ratio: 0.75
+  depthwise: False
+  act: "silu"
+neck:
+  _target_: src.models.necks.longshort_neck.LongShortNeck
+  in_channels: [128, 256, 512]
+head:
+  _target_: src.models.heads.tal_head.TALHead
+  num_classes: 8
+  strides: [8, 16, 32]
+  in_channels: ${model.neck.in_channels}
+  mid_channel: 128
+  conf_thre: 0.01
+  nms_thre: 0.65
+  max_objs: 100
+  act: ${model.backbone.act}
+  depthwise: ${model.backbone.depthwise}
+  gamma: 1.0
+  ignore_thr: 0.5
+  ignore_value: 1.5
+transform:
+  _target_: src.models.transforms.kornia_transform.KorniaTransform
+  train_aug:
+    -
+      _target_: kornia.augmentation.RandomHorizontalFlip
+  train_size:
+    - [496, 800]
+    - [496, 816]
+    - [512, 832]
+    - [528, 848]
+    - [528, 864]
+    - [544, 880]
+    - [560, 896]
+    - [560, 912]
+    - [576, 928]
+    - [576, 944]
+    - [592, 960]
+    - [608, 976]
+    - [608, 992]
+    - [624, 1008]
+    - [640, 1024]
+    - [640, 1040]
+    - [656, 1056]
+    - [656, 1072]
+    - [672, 1088]
+    - [688, 1104]
+    - [688, 1120]
+  eval_size: [600, 960]
+  original_size: True
+metric:
+  _target_: src.models.metrics.cocoeval_metric.COCOEvalMetric
+  eval_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+  test_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+  future_time_constant: [1]
+optim:
+  _target_: src.models.optims.streamyolo_optim.StreamYOLOOptim
+  lr: 0.001
+  momentum: 0.9
+  weight_decay: 5e-4
+  batch_size: ${datamodule.batch_size}
+torch_compile: null

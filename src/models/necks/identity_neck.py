@@ -8,7 +8,7 @@ class IdentityNeck(BaseNeck):
     input_frames: int = 2
     output_frames: int = 2
 
-    def __init__(self, **kwargs):
+    def __init__(self):
         super().__init__()
 
     def forward(

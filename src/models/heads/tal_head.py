@@ -38,7 +38,6 @@ class TALHead(BaseHead):
         gamma: float = 1.0,
         ignore_thr: float = 0.5,
         ignore_value: float = 1.5,
-        **kwargs
     ):
         """
         Args:

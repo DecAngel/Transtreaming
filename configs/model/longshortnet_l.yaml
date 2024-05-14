@@ -1,0 +1,17 @@
+defaults:
+  - longshortnet_s
+  - _self_
+
+backbone:
+  base_depth: 3
+  base_channel: 64
+neck:
+  in_channels: [256, 512, 1024]
+head:
+  in_channels: ${model.neck.in_channels}
+  mid_channel: 256
+  conf_thre: 0.01
+  nms_thre: 0.65
+  gamma: 1.0
+  ignore_thr: 0.5
+  ignore_value: 1.6

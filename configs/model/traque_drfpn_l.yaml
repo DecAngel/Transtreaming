@@ -1,0 +1,14 @@
+defaults:
+  - traque_drfpn_s
+  - _self_
+
+backbone:
+  base_depth: 3
+  base_channel: 64
+  base_neck_depth: 3
+  hidden_ratio: 1.0
+neck:
+  in_channels: [256, 512, 1024]
+head:
+  in_channels: ${model.neck.in_channels}
+  mid_channel: 256

@@ -1,0 +1,12 @@
+defaults:
+  - traque_pafpn_s
+  - _self_
+
+backbone:
+  base_depth: 3
+  base_channel: 64
+neck:
+  in_channels: [256, 512, 1024]
+head:
+  in_channels: ${model.neck.in_channels}
+  mid_channel: 256

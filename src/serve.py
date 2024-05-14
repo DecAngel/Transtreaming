@@ -5,8 +5,6 @@ import hydra
 import rootutils
 from omegaconf import DictConfig
 
-from src.primitives.service import BaseService
-
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
@@ -34,6 +32,7 @@ from src.utils import (
     instantiate_services,
     task_wrapper,
 )
+from src.primitives.service import BaseService
 
 log = RankedLogger(__name__, rank_zero_only=True)
 

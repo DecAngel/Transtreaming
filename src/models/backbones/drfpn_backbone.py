@@ -36,7 +36,6 @@ class DRFPNBackbone(BaseBackbone):
         hidden_ratio: float = 1.0,
         depthwise: bool = False,
         act='silu',
-        **kwargs
     ):
         super().__init__()
         self.out_channels: Tuple[int, ...] = tuple(i * base_channel for i in (4, 8, 16))

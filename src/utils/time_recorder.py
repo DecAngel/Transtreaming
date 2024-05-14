@@ -13,10 +13,10 @@ class TimeRecorder:
         assert mode in ['sum', 'avg']
         self.reduce_fn = np.sum if mode == 'sum' else np.mean
         self.file = file if file is not None else open(os.devnull, 'w')
-        self._start()
+        self.restart()
 
     def __enter__(self):
-        self._start()
+        self.restart()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -27,7 +27,7 @@ class TimeRecorder:
         return f'{self.description} total time: {round(self.last_time - self.start_time, 4)}s\n\t' + \
                '\t'.join([f'{k}: {np.round(self.reduce_fn(v), 4).item()}s, {len(v)} times\n' for k, v in self.t.items()])
 
-    def _start(self):
+    def restart(self):
         self.start_time = time.perf_counter()
         self.last_time = self.start_time
         self.t = defaultdict(list)

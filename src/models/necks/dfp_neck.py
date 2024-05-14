@@ -20,7 +20,6 @@ class DFPNeck(BaseNeck):
     def __init__(
             self,
             in_channels: Tuple[int, ...],
-            **kwargs,
     ):
         super().__init__()
         self.convs = nn.ModuleList([

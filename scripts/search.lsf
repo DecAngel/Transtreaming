@@ -1,0 +1,49 @@
+#!/bin/bash
+#BSUB -J TRAQue
+#BSUB -o logs/lsf/%J.out
+#BSUB -e logs/lsf/%J.err
+#BSUB -q gpu_v100
+#BSUB -gpu "num=8:mode=exclusive_process:aff=yes"
+#BSUB -cwd /seu_share/home/fuchenchen/230238536/projects/TRAQue
+module load anaconda3
+module load cuda-11.1
+module load gcc-9.3.0
+source activate traque
+
+python src/serve.py &> logs/lsf/service.log &
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[0] datamodule.batch_size=4 seed=12340 model.optim.lr=0.0037178243279936364 model.optim.momentum=0.9301633436201739 model.optim.weight_decay=0.0005571959971878348 model.neck.num_heads=2 model.head.conf_thre=0.004859814828717312 model.head.nms_thre=0.41925340353969165 model.head.ignore_thr=0.7506293838483771 model.head.ignore_value=1.598785925221881 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1] model.metric.future_time_constant=[1] sap_strategy.past_length=2 model.neck.window_size=[12,12] &> logs/lsf/key_025525.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[1] datamodule.batch_size=4 seed=12346 model.optim.lr=0.0018195983295621846 model.optim.momentum=0.88154607633834 model.optim.weight_decay=0.0035339832018463245 model.neck.num_heads=1 model.head.conf_thre=0.012820535409499081 model.head.nms_thre=0.5095975351173768 model.head.ignore_thr=0.6604631592202801 model.head.ignore_value=1.410040874843754 datamodule.train_data_source.image_clip_ids=[-4,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1,2,4] datamodule.val_data_source.image_clip_ids=[-4,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1,2,4] datamodule.test_data_source.image_clip_ids=[-4,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1,2,4] model.metric.future_time_constant=[1,2,4] sap_strategy.past_length=4 model.neck.window_size=[4,4] &> logs/lsf/key_715909.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[2] datamodule.batch_size=4 seed=12340 model.optim.lr=0.0018890058266985018 model.optim.momentum=0.8598169448813856 model.optim.weight_decay=0.004400285649127554 model.neck.num_heads=2 model.head.conf_thre=0.04133894209491122 model.head.nms_thre=0.5047232791773818 model.head.ignore_thr=0.5820463013834511 model.head.ignore_value=1.5971392746807347 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1] model.metric.future_time_constant=[1] sap_strategy.past_length=2 model.neck.window_size=[12,12] &> logs/lsf/key_812121.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[3] datamodule.batch_size=4 seed=12341 model.optim.lr=0.002090489019069176 model.optim.momentum=0.8641493057120094 model.optim.weight_decay=0.0009743914120042948 model.neck.num_heads=8 model.head.conf_thre=0.03413401636753381 model.head.nms_thre=0.43772251480768093 model.head.ignore_thr=0.6696690348000506 model.head.ignore_value=1.4759210667661495 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1] model.metric.future_time_constant=[1] sap_strategy.past_length=2 model.neck.window_size=[12,12] &> logs/lsf/key_550514.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[4] datamodule.batch_size=4 seed=12348 model.optim.lr=0.0038203556333792107 model.optim.momentum=0.936521374417197 model.optim.weight_decay=0.0025123651483125358 model.neck.num_heads=1 model.head.conf_thre=0.04822275651025407 model.head.nms_thre=0.422348562583459 model.head.ignore_thr=0.6278211797940741 model.head.ignore_value=1.7192383247266632 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1,2,3] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1,2,3] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1,2,3] model.metric.future_time_constant=[1,2,3] sap_strategy.past_length=4 model.neck.window_size=[4,4] &> logs/lsf/key_183574.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[5] datamodule.batch_size=4 seed=12347 model.optim.lr=0.004779137672384798 model.optim.momentum=0.9244204660308127 model.optim.weight_decay=0.001033429913482179 model.neck.num_heads=8 model.head.conf_thre=0.005907351019989418 model.head.nms_thre=0.6802607855666917 model.head.ignore_thr=0.5083551344500639 model.head.ignore_value=1.4968063036532369 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1,2,3] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1,2,3] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1,2,3] model.metric.future_time_constant=[1,2,3] sap_strategy.past_length=4 model.neck.window_size=[12,12] &> logs/lsf/key_569858.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[6] datamodule.batch_size=4 seed=12344 model.optim.lr=0.001308745433187764 model.optim.momentum=0.9336138801550631 model.optim.weight_decay=0.0033957799883551974 model.neck.num_heads=2 model.head.conf_thre=0.0465470207062198 model.head.nms_thre=0.4400569229602563 model.head.ignore_thr=0.7992080850349423 model.head.ignore_value=1.7847942708679585 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1,2,3] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1,2,3] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1,2,3] model.metric.future_time_constant=[1,2,3] sap_strategy.past_length=4 model.neck.window_size=[8,8] &> logs/lsf/key_357500.log & 
+sleep 10
+nvidia-smi
+
+python src/train.py experiment=traque_drfpn_l trainer.devices=[7] datamodule.batch_size=4 seed=12349 model.optim.lr=0.0013891220983930149 model.optim.momentum=0.9303875328013921 model.optim.weight_decay=0.002838638351624454 model.neck.num_heads=4 model.head.conf_thre=0.012627357547299042 model.head.nms_thre=0.4902645181889701 model.head.ignore_thr=0.7548078751336091 model.head.ignore_value=1.7430472086273179 datamodule.train_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.train_data_source.bbox_clip_ids=[0,1,2,3] datamodule.val_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.val_data_source.bbox_clip_ids=[1,2,3] datamodule.test_data_source.image_clip_ids=[-3,-2,-1,0] datamodule.test_data_source.bbox_clip_ids=[1,2,3] model.metric.future_time_constant=[1,2,3] sap_strategy.past_length=4 model.neck.window_size=[8,8] &> logs/lsf/key_159032.log & 
+sleep 10
+nvidia-smi
+
+wait $(jobs -p)

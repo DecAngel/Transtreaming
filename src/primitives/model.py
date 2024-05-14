@@ -1,3 +1,5 @@
+import contextlib
+import json
 from pathlib import Path
 from typing import Optional, Tuple, Union, Dict, Literal, Mapping, Any, List
 
@@ -14,9 +16,9 @@ from src.primitives.batch import (
 )
 from src.utils.pylogger import RankedLogger
 from src.utils.array_operations import slice_along
+from src.utils.time_recorder import TimeRecorder
 
-
-logger = RankedLogger(__name__, rank_zero_only=True)
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 def concat_pyramids(pyramids: List[PYRAMID], dim: int = 1) -> PYRAMID:
@@ -149,7 +151,9 @@ class BaseModel(L.LightningModule):
         self.metric = metric
         self.optim = optim
         if torch_compile is not None:
-            self._forward_impl = torch.compile(self._forward_impl, fullgraph=True, dynamic=True, mode=torch_compile)
+            self._forward_impl = torch.compile(
+                self._forward_impl, fullgraph=False, dynamic=True, mode=torch_compile
+            )
 
     def setup(self, stage: str) -> None:
         for b in filter(None, [self.backbone, self.neck, self.head, self.transform, self.metric, self.optim]):
@@ -165,11 +169,11 @@ class BaseModel(L.LightningModule):
                 'seq_id': torch.randint(0, 10, size=(b, ), dtype=torch.long),
                 'frame_id': torch.randint(0, 900, size=(b, ), dtype=torch.long),
                 'image_id': torch.randint(0, 10000, size=(b, ), dtype=torch.long),
-                'current_size': torch.tensor([[100, 200]]*b, dtype=torch.long),
-                'original_size': torch.tensor([[200, 400]]*b, dtype=torch.long),
+                'current_size': torch.tensor([[600, 960]]*b, dtype=torch.long),
+                'original_size': torch.tensor([[1200, 1920]]*b, dtype=torch.long),
             },
             'image': {
-                'image': torch.rand(b, tp, 3, 100, 200),
+                'image': torch.randint(0, 255, size=(b, tp, 3, 600, 960), dtype=torch.float32),
             },
             'image_clip_ids': torch.stack([torch.arange(-tp+1, 1, dtype=torch.long)]*b, dim=0),
             'bbox': {
@@ -209,12 +213,12 @@ class BaseModel(L.LightningModule):
         missing_keys = list(filter(lambda key: key not in misshaped_keys, missing_keys))
 
         if len(missing_keys) > 0:
-            logger.warning(f'Missing keys in ckpt: {missing_keys}')
+            log.warning(f'Missing keys in ckpt: {missing_keys}')
         if len(unexpected_keys) > 0:
-            logger.warning(f'Unexpected keys in ckpt: {unexpected_keys}')
+            log.warning(f'Unexpected keys in ckpt: {unexpected_keys}')
         if len(misshaped_keys) > 0:
-            logger.warning(f'Misshaped keys in ckpt: {misshaped_keys}')
-        logger.info(f'pth file {file_path} loaded!')
+            log.warning(f'Misshaped keys in ckpt: {misshaped_keys}')
+        log.info(f'pth file {file_path} loaded!')
 
     def load_from_ckpt(self, file_path: Union[str, Path], strict: bool = True):
         self.load_state_dict(
@@ -224,7 +228,7 @@ class BaseModel(L.LightningModule):
             )['state_dict'],
             strict=strict,
         )
-        logger.info(f'ckpt file {file_path} loaded!')
+        log.info(f'ckpt file {file_path} loaded!')
 
     def _forward_impl(
             self,
@@ -246,36 +250,49 @@ class BaseModel(L.LightningModule):
         Clip_id:    |---past_clip_ids---|  |---future_clip_ids---|
         """
         # check
-        B, TI, C, H, W = image.size()
-        pci = past_clip_ids.float()
-        fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
-        _, TP = pci.size()
-        _, TF = fci.size()
+        check_time = False
+        with TimeRecorder('model', mode='sum') if check_time is True else contextlib.nullcontext() as tr:
+            B, TI, C, H, W = image.size()
+            pci = past_clip_ids.float()
+            fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
+            _, TP = pci.size()
+            _, TF = fci.size()
+            if has_buffer:
+                # requires buffer, batch_size must be 1
+                assert B == 1
+            if check_time:
+                tr.record('check')
 
-        if has_buffer:
-            # requires buffer, batch_size must be 1
-            assert B == 1
+            # inference
+            features_p = self.backbone(image)
+            new_buffer = None
+            if check_time:
+                tr.record('backbone')
 
-        # inference
-        features_p = self.backbone(image)
-        new_buffer = None
+            # append buffer
+            if has_buffer:
+                if buffer is not None:
+                    # append buffer to features_p and past_time_constant
+                    features_p = concat_pyramids([buffer, features_p], dim=1)
+                # pad
+                TB = features_p[0].size(1)
+                if TB < TP:
+                    features_p = concat_pyramids([slice_pyramid(features_p, dim=1, start=0, end=1)]*(TP-TB)+[features_p], dim=1)
+                elif TB > TP:
+                    features_p = slice_pyramid(features_p, dim=1, start=TB-TP, end=TB)
+                new_buffer = features_p
+            if check_time:
+                tr.record('concat')
 
-        # append buffer
-        if has_buffer:
-            if buffer is not None:
-                # append buffer to features_p and past_time_constant
-                features_p = concat_pyramids([buffer, features_p], dim=1)
-            # pad
-            TB = features_p[0].size(1)
-            if TB < TP:
-                features_p = concat_pyramids([slice_pyramid(features_p, dim=1, start=0, end=1)]*(TP-TB)+[features_p], dim=1)
-            elif TB > TP:
-                features_p = slice_pyramid(features_p, dim=1, start=TB-TP, end=TB)
-            new_buffer = features_p
+            features_f = self.neck(features_p, pci, fci)
+            if check_time:
+                tr.record('neck')
 
-        features_f = self.neck(features_p, pci, fci)
+            loss_pred = self.head(features_f, gt_coordinate, gt_label, shape)
+            if check_time:
+                tr.record('head')
 
-        return self.head(features_f, gt_coordinate, gt_label, shape), new_buffer
+            return loss_pred, new_buffer
 
     def forward(self, batch: BatchDict) -> Union[BatchDict, LossDict]:
         with torch.inference_mode():
@@ -322,7 +339,8 @@ class BaseModel(L.LightningModule):
 
     def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         output: LossDict = self(batch)
-        self.log_dict(output, on_step=True, prog_bar=True)
+        self.log('loss', output['loss'], on_step=True, prog_bar=True)
+        self.log_dict({k: v for k, v in output.items() if k != 'loss'}, on_step=True)
         return output
 
     def on_validation_epoch_start(self) -> None:
@@ -338,8 +356,9 @@ class BaseModel(L.LightningModule):
     def on_validation_epoch_end(self) -> None:
         if not self.trainer.sanity_checking and self.metric is not None:
             d = {f'val_{k}': v.cpu().item() for k, v in self.metric.compute().items()}
-            self.log_dict(d, on_epoch=True, prog_bar=True)
-            logger.info(f'{d}')
+            log.info(f'Val Metric Dict: {json.dumps(d, indent=2)}')
+            self.log('val_mAP', d.pop('val_mAP'), on_epoch=True, prog_bar=True)
+            self.log_dict(d, on_epoch=True)
         return None
 
     def on_test_epoch_start(self) -> None:
@@ -355,6 +374,7 @@ class BaseModel(L.LightningModule):
     def on_test_epoch_end(self) -> None:
         if not self.trainer.sanity_checking and self.metric is not None:
             d = {f'test_{k}': v.cpu().item() for k, v in self.metric.compute().items()}
-            self.log_dict(d, on_epoch=True, prog_bar=False)
-            logger.info(f'{d}')
+            log.info(f'Test Metric Dict: {json.dumps(d, indent=2)}')
+            self.log('test_mAP', d.pop('test_mAP'), on_epoch=True, prog_bar=True)
+            self.log_dict(d, on_epoch=True)
         return None

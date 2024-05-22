@@ -152,7 +152,7 @@ class BaseModel(L.LightningModule):
         self.optim = optim
         if torch_compile is not None:
             self._forward_impl = torch.compile(
-                self._forward_impl, fullgraph=False, dynamic=True, mode=torch_compile
+                self.forward_impl, fullgraph=False, dynamic=True, mode=torch_compile
             )
 
     def setup(self, stage: str) -> None:
@@ -230,75 +230,81 @@ class BaseModel(L.LightningModule):
         )
         log.info(f'ckpt file {file_path} loaded!')
 
-    def _forward_impl(
+    def forward_impl(
             self,
             image: IMAGE,
             past_clip_ids: TIME,
             future_clip_ids: TIME,
-
-            has_buffer: bool = False,
-            buffer: Optional[PYRAMID] = None,
-
             gt_coordinate: Optional[COORDINATE] = None,
             gt_label: Optional[LABEL] = None,
             shape: Optional[SIZE] = None,
-    ) -> Tuple[Union[BBoxDict, LossDict], Optional[PYRAMID]]:
+    ) -> Union[BBoxDict, LossDict]:
         """
         Image:                     image
         Buffer:     buffer
         BBox:                                       pred
         Clip_id:    |---past_clip_ids---|  |---future_clip_ids---|
         """
-        # check
-        check_time = False
-        with TimeRecorder('model', mode='sum') if check_time is True else contextlib.nullcontext() as tr:
-            B, TI, C, H, W = image.size()
-            pci = past_clip_ids.float()
-            fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
-            _, TP = pci.size()
-            _, TF = fci.size()
-            if has_buffer:
-                # requires buffer, batch_size must be 1
-                assert B == 1
-            if check_time:
-                tr.record('check')
+        pci = past_clip_ids.float()
+        fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
+        _, TP = pci.size()
+        _, TF = fci.size()
 
-            # inference
-            features_p = self.backbone(image)
-            new_buffer = None
-            if check_time:
-                tr.record('backbone')
+        # inference
+        features_p = self.backbone(image)
+        features_f = self.neck(features_p, pci, fci)
+        loss_pred = self.head(features_f, gt_coordinate, gt_label, shape)
+        return loss_pred
 
-            # append buffer
-            if has_buffer:
-                if buffer is not None:
-                    # append buffer to features_p and past_time_constant
-                    features_p = concat_pyramids([buffer, features_p], dim=1)
-                # pad
-                TB = features_p[0].size(1)
-                if TB < TP:
-                    features_p = concat_pyramids([slice_pyramid(features_p, dim=1, start=0, end=1)]*(TP-TB)+[features_p], dim=1)
-                elif TB > TP:
-                    features_p = slice_pyramid(features_p, dim=1, start=TB-TP, end=TB)
-                new_buffer = features_p
-            if check_time:
-                tr.record('concat')
+    def inference_backbone_neck(
+            self,
+            image: IMAGE,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
+            buffer: Optional[PYRAMID] = None,
+    ) -> Tuple[PYRAMID, PYRAMID]:
+        """Get forecasted features and buffer features"""
+        B, TI, C, H, W = image.size()
+        pci = past_clip_ids.float()
+        fci = future_clip_ids[:, (int(self.head.require_prev_frame) if self.training else 0):].float()
+        _, TP = pci.size()
+        _, TF = fci.size()
+        assert B == 1
 
-            features_f = self.neck(features_p, pci, fci)
-            if check_time:
-                tr.record('neck')
+        # Backbone
+        features_p = self.backbone(image)
 
-            loss_pred = self.head(features_f, gt_coordinate, gt_label, shape)
-            if check_time:
-                tr.record('head')
+        # Concatenate
+        if buffer is not None:
+            # append buffer to features_p and past_time_constant
+            features_p = concat_pyramids([buffer, features_p], dim=1)
+        # pad
+        TB = features_p[0].size(1)
+        if TB < TP:
+            features_p = concat_pyramids(
+                [slice_pyramid(features_p, dim=1, start=0, end=1)] * (TP - TB) + [features_p], dim=1
+            )
+        elif TB > TP:
+            features_p = slice_pyramid(features_p, dim=1, start=TB - TP, end=TB)
 
-            return loss_pred, new_buffer
+        # Neck
+        features_f = self.neck(features_p, pci, fci)
+
+        return features_f, features_p
+
+    def inference_head(
+            self,
+            features_f: PYRAMID,
+            shape: Optional[SIZE] = None
+    ) -> BBoxDict:
+        """Get detection"""
+        return self.head(features_f, None, None, shape)
 
     def forward(self, batch: BatchDict) -> Union[BatchDict, LossDict]:
         with torch.inference_mode():
             batch = self.transform.preprocess(batch) if self.transform is not None else batch
         if self.training:
-            loss_dict, _ = self._forward_impl(
+            loss_dict = self.forward_impl(
                 image=batch['image']['image'],
                 past_clip_ids=batch['image_clip_ids'],
                 future_clip_ids=batch['bbox_clip_ids'],
@@ -309,7 +315,7 @@ class BaseModel(L.LightningModule):
             return loss_dict
         else:
             with torch.inference_mode():
-                bbox, _ = self._forward_impl(
+                bbox = self.forward_impl(
                     image=batch['image']['image'],
                     past_clip_ids=batch['image_clip_ids'],
                     future_clip_ids=batch['bbox_clip_ids'],
@@ -328,14 +334,10 @@ class BaseModel(L.LightningModule):
     ) -> Tuple[BBoxDict, PYRAMID]:
         with torch.inference_mode():
             shape = torch.tensor([image.shape[-2:]], dtype=torch.long, device=self.device)
-            return self._forward_impl(
-                image=image,
-                past_clip_ids=past_clip_ids,
-                future_clip_ids=future_clip_ids,
-                has_buffer=True,
-                buffer=buffer,
-                shape=shape,
+            feature_f, features_p = self.inference_backbone_neck(
+                image, past_clip_ids, future_clip_ids, buffer
             )
+            return self.inference_head(feature_f, shape), features_p
 
     def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         output: LossDict = self(batch)

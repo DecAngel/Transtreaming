@@ -1,40 +1,39 @@
+import contextlib
+import io
+import pickle
+import time
+from threading import Thread
 from typing import Callable, Tuple, Optional, List
 
-import matplotlib.pyplot as plt
-import torch
+import numpy as np
+from PIL import Image
+from kornia.geometry import resize
+from matplotlib import pyplot as plt
+from pycocotools.coco import COCO
+from torchvision.transforms import PILToTensor
+from torchvision.transforms.v2 import ToTensor
+from tqdm import tqdm
 
-from src.primitives.batch import IMAGE, BBoxDict, PYRAMID, TIME
+from src.primitives.batch import IMAGE, BBoxDict, PYRAMID, TIME, SIZE
+from src.primitives.model import BaseModel
+from src.utils.array_operations import remove_pad_along
 from src.utils.pylogger import RankedLogger
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
-import contextlib
-import functools
-import io
 import json
 import signal
 import sys
 import os
-import platform
 import socket
 import subprocess
-import time
 import multiprocessing as mp
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 
-import numpy as np
 import torch
-from pycocotools.coco import COCO
 from sap_toolkit.client import EvalClient
 from sap_toolkit.generated import eval_server_pb2
-from tqdm import tqdm
-from kornia.geometry.transform import resize
-
-from src.primitives.model import BaseModel
-from src.primitives.batch import IMAGE, BBoxDict
-from src.utils.array_operations import remove_pad_along
-from src.utils.time_recorder import TimeRecorder
 
 
 coco_eval_metric_names = [
@@ -136,7 +135,7 @@ class SAPServer:
 
 
 class SAPClient(EvalClient):
-    def __init__(self, server: SAPServer, resize_ratio: int, device_id: int):
+    def __init__(self, server: SAPServer):
         super().__init__(
             json.loads(server.config_path.read_text()),
             (
@@ -147,10 +146,20 @@ class SAPClient(EvalClient):
             verbose=True
         )
         self.stream_start_time = mp.Value('d', 0.0, lock=True)
-        self.resize_ratio = resize_ratio
-        self.device_id = device_id
         signal.signal(signal.SIGINT, self.close)
         signal.signal(signal.SIGTERM, self.close)
+
+    def send_result_shm(self, bboxes, bbox_scores, labels, delay: float = 0.0):
+        if delay > 1e-4:
+            time.sleep(delay)
+        timestamp = time.perf_counter()
+        super().send_result_shm(bboxes, bbox_scores, labels, timestamp)
+
+    def send_result_to_server(self, bboxes, bbox_scores, labels, delay: float = 0.0):
+        if self.result_thread:
+            self.result_thread.join()
+        self.result_thread = Thread(target=self.send_result_shm, args=(bboxes, bbox_scores, labels, delay))
+        self.result_thread.start()
 
     def generate(self, results_file='results.json'):
         self.result_stub.GenResults(eval_server_pb2.String(value=results_file))
@@ -173,174 +182,305 @@ def concat_pyramids(pyramids: List[PYRAMID], dim: int = 1) -> PYRAMID:
 
 
 class BaseSAPStrategy:
-    def __init__(self):
-        super().__init__()
-        self.exp_tag = self.__class__.__name__
-        
-        self.tr = TimeRecorder(description=f'{self.exp_tag}', mode='avg')
-        self._frame_id_prev = None
-        self._seq_start_time = None
-        self._max_frames = None
-        self._min_time = 0.1
-        self._recv_times = []
-        self._process_times = []
-        self._send_times = []
+    def __init__(self, past_length: int, future_length: int):
+        self.past_length = past_length
+        self.future_length = future_length
+        self.past_clip_ids = torch.tensor([list(range(-past_length+1, 1))], dtype=torch.long)
+        self.future_clip_ids = torch.tensor([list(range(1, future_length+1))], dtype=torch.long)
 
-        self.model: Optional[BaseModel] = None
-        self.client: Optional[SAPClient] = None
-        self.server: Optional[SAPServer] = None
+        # constant
+        self._sap_factor = None
+        self._resize_ratio = None
+        self._prev_frame_id = None
+        self._device = None
+        self._start_time = None
 
-    def _reset(self):
-        self.tr.restart()
-        self._frame_id_prev = None
-        self._seq_start_time = time.perf_counter()
-        self._recv_times.clear()
-        self._process_times.clear()
-        self._send_times.clear()
+        # time list
+        self._recv_time = []
+        self._proc_time = []
+        self._send_time = []
 
-    def recv_fn(self):
-        self.tr.record()
-        t1 = self.time_fn()
+    def transform_fn(self, frame: np.ndarray):
+        frame = torch.from_numpy(frame).permute(2, 0, 1)[None, [2, 1, 0]]
+        frame = frame.to(dtype=torch.float16, device=self._device)
+        return resize(
+            frame,
+            (frame.size(-2) // self._resize_ratio, frame.size(-1) // self._resize_ratio),
+        )[None]
+
+    def time_fn(self):
+        return (time.perf_counter() - self._start_time) * 30 * self._sap_factor
+
+    def recv_fn(self, client: SAPClient) -> Optional[Tuple[int, int, IMAGE]]:
+        # initial
         res = None
         while True:
-            frame_id_next, frame = self.client.get_frame()
-            if frame_id_next is not None:
-                if self._frame_id_prev is None:
-                    frame_id_delta = frame_id_next
-                    self._frame_id_prev = frame_id_next
-                elif frame_id_next != self._frame_id_prev:
-                    frame_id_delta = frame_id_next - self._frame_id_prev
-                    self._frame_id_prev = frame_id_next
+            next_frame_id, frame = client.get_frame()
+
+            if next_frame_id is not None:
+                if self._prev_frame_id is None:
+                    frame_id_delta = next_frame_id
+                    self._prev_frame_id = next_frame_id
+                elif next_frame_id != self._prev_frame_id:
+                    frame_id_delta = next_frame_id - self._prev_frame_id
+                    self._prev_frame_id = next_frame_id
                 else:
                     continue
-                self.tr.record('recv_fn_wait')
 
-                frame = torch.from_numpy(frame).permute(2, 0, 1)[None, [2, 1, 0]]
-                self.tr.record('recv_fn_tensor')
-
-                frame = frame.to(dtype=torch.float16, device=f'cuda:{self.client.device_id}')
-                self.tr.record('recv_fn_cuda_half')
-
-                frame = resize(
-                    frame,
-                    (frame.size(-2) // self.client.resize_ratio, frame.size(-1) // self.client.resize_ratio),
-                )[None]
-                self.tr.record('recv_fn_resize')
-                
-                res = frame_id_delta, frame
+                t1 = self.time_fn()
+                frame = self.transform_fn(frame)
+                res = next_frame_id, frame_id_delta, frame
+                t2 = self.time_fn()
+                self._recv_time.append((t1, t2 - t1))
                 break
             else:
                 break
-        t2 = self.time_fn()
-        self._recv_times.append((t1, max(t2-t1, self._min_time)))
+
         return res
 
-    def send_fn(self, bbox: BBoxDict):
-        self.tr.record()
+    def proc_fn(
+            self,
+            image: IMAGE,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
+            buffer: Optional[PYRAMID],
+            model: BaseModel,
+    ) -> Tuple[BBoxDict, PYRAMID]:
         t1 = self.time_fn()
-        coordinate = remove_pad_along(bbox['coordinate'][0, 0].cpu().numpy(), axis=0) * self.client.resize_ratio
+        res = model.inference(
+            image=image,
+            past_clip_ids=past_clip_ids,
+            future_clip_ids=future_clip_ids,
+            buffer=buffer,
+        )
+        t2 = self.time_fn()
+        self._proc_time.append((t1, t2 - t1))
+        return res
+
+    def proc_backbone_neck_fn(
+            self,
+            image: IMAGE,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
+            buffer: Optional[PYRAMID],
+            model: BaseModel,
+    ) -> Tuple[PYRAMID, PYRAMID]:
+        t1 = self.time_fn()
+        res = model.inference_backbone_neck(
+            image=image,
+            past_clip_ids=past_clip_ids,
+            future_clip_ids=future_clip_ids,
+            buffer=buffer,
+        )
+        t2 = self.time_fn()
+        self._proc_time.append((t1, t2 - t1))
+        return res
+
+    def proc_head_fn(
+            self,
+            features_f: PYRAMID,
+            shape: Optional[SIZE],
+            model: BaseModel,
+    ) -> BBoxDict:
+        t1 = self.time_fn()
+        res = model.inference_head(
+            features_f=features_f,
+            shape=shape
+        )
+        t2 = self.time_fn()
+        self._proc_time[-1] = self._proc_time[-1][0], self._proc_time[-1][1] + t2 - t1
+        return res
+
+    def send_fn(self, bbox: BBoxDict, client: SAPClient, delay: float = 0.0) -> None:
+        t1 = self.time_fn()
+        coordinate = remove_pad_along(
+            bbox['coordinate'][0, 0].cpu().numpy(),
+            axis=0
+        ) * self._resize_ratio
         probability = bbox['probability'][0, 0, :coordinate.shape[0]].cpu().numpy()
         label = bbox['label'][0, 0, :coordinate.shape[0]].cpu().numpy()
-        self.tr.record('send_fn_convert')
-        self.client.send_result_to_server(coordinate, probability, label)
-        self.tr.record('send_fn_send')
+        client.send_result_to_server(coordinate, probability, label, delay=delay)
         t2 = self.time_fn()
-        self._send_times.append((t1, max(t2-t1, self._min_time)))
+        self._send_time.append((t1, t2 - t1))
 
-    def process_fn(self, *args, **kwargs):
-        self.tr.record()
-        t1 = self.time_fn()
-        res = self.model.inference(*args, **kwargs)
-        self.tr.record('process_fn')
-        t2 = self.time_fn()
-        self._process_times.append((t1, max(t2-t1, self._min_time)))
-        return res
-
-    def time_fn(self):
-        return (time.perf_counter() - self._seq_start_time) * 30 * self.server.sap_factor
-
-    def infer_all(
+    def infer(
             self,
             model: BaseModel,
-            server: SAPServer,
             client: SAPClient,
-            visualize_plot: bool = False,
-            visualize_print: bool = False,
-            output_dir: Optional[str] = None,
+            start_time: float,
+    ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]]:
+        self._start_time = start_time
+        self.infer_step(model, client)
+        return self._recv_time, self._proc_time, self._send_time
+
+    def infer_prepare(
+            self,
+            model: BaseModel,
+            client: SAPClient,
+            sap_factor: float,
+            dataset_resize_ratio: int,
+            demo_input: List[np.ndarray],
+    ) -> None:
+        self.past_clip_ids = self.past_clip_ids.to(model.device)
+        self.future_clip_ids = self.future_clip_ids.to(model.device)
+        self._sap_factor = sap_factor
+        self._resize_ratio = dataset_resize_ratio
+        self._prev_frame_id = None
+        self._device = model.device
+        self._recv_time.clear()
+        self._proc_time.clear()
+        self._send_time.clear()
+
+        buffer = None
+        for frame in demo_input:
+            frame = self.transform_fn(frame)
+            _, buffer = model.inference(frame, self.past_clip_ids, self.future_clip_ids, buffer)
+
+    def infer_step(
+            self,
+            model: BaseModel,
+            client: SAPClient,
+    ) -> None:
+        raise NotImplementedError()
+
+
+class SAPRunner:
+    def __init__(
+            self,
+            model: BaseModel,
+            strategy: BaseSAPStrategy,
+
+            data_dir: str,
+            ann_file: str,
+            output_dir: str,
+            demo_dir: str,
+
+            sap_tag: Optional[str] = None,
+            sap_factor: float = 1.0,
+            dataset_resize_ratio: int = 2,
+
+            visualize: bool = False,
+            vis_max_frame: int = 20,
     ):
         self.model = model
-        self.server = server
-        self.client = client
-        self.exp_tag = f'{model.neck.__class__.__name__} under {self.__class__.__name__}'
-        self._max_frames = int(20 * server.sap_factor)
+        self.strategy = strategy
 
-        # load coco dataset
-        with contextlib.redirect_stdout(io.StringIO()):
-            coco = COCO(server.ann_file)
-        seqs = coco.dataset['sequences']
+        self.data_dir = data_dir
+        self.ann_file = ann_file
+        self.output_dir = output_dir
+        self.demo_dir = demo_dir
 
-        # warm_up
-        with torch.inference_mode():
-            buffer = None
-            example_input = model.example_input_array[0]
-            example_input = {
-                'image': example_input['image']['image'][:1].to(dtype=torch.float16, device=model.device),
-                'past_clip_ids': example_input['image_clip_ids'][:1].to(dtype=torch.long, device=model.device),
-                'future_clip_ids': example_input['bbox_clip_ids'][:1].to(dtype=torch.long, device=model.device),
-            }
-            for i in range(3):
-                _, buffer = model.inference(
-                    **example_input,
-                    buffer=buffer,
-                )
+        self.sap_tag = sap_tag
+        self.sap_factor = sap_factor
+        self.dataset_resize_ratio = dataset_resize_ratio
 
-        torch.cuda.synchronize(device=client.device_id)
+        self.visualize = visualize
+        self.vis_max_frame = vis_max_frame
+        self.vis_count = 0
 
-        with torch.inference_mode():
-            for i, seq_id in enumerate(tqdm(seqs)):
-                client.request_stream(seq_id)
-                client.get_stream_start_time()  # wait
-                self._reset()
-
-                self.infer_sequence(
-                    input_fn=self.recv_fn,
-                    process_fn=self.process_fn,
-                    output_fn=self.send_fn,
-                    time_fn=self.time_fn,
-                )
-                client.stop_stream()
-                self.tr.record('stop_stream')
-                if visualize_plot:
-                    self.plot_time(output_dir)
-                    self.tr.record('plot')
-                if visualize_print:
-                    self.tr.print()
-
-        filename = f'{int(time.time()) % 1000000000}.json'
-        client.generate(filename)
-        return server.get_result(filename)
-
-    def infer_sequence(
+    def plot_time(
             self,
-            input_fn: Callable[[], Optional[Tuple[int, IMAGE]]],
-            process_fn: Callable[[IMAGE, TIME, TIME, Optional[PYRAMID]], Tuple[BBoxDict, PYRAMID]],
-            output_fn: Callable[[BBoxDict], None],
-            time_fn: Callable[[], float],
-    ) -> None: raise NotImplementedError()
-
-    def plot_time(self, save_dir: Optional[str] = None):
+            recv_times: List[Tuple[float, float]],
+            proc_times: List[Tuple[float, float]],
+            send_times: List[Tuple[float, float]],
+    ):
         fig, ax = plt.subplots(dpi=600)
-        ax.broken_barh(self._send_times, (6, 8), facecolors=(51 / 255, 57 / 255, 91 / 255))
-        ax.broken_barh(self._process_times, (16, 8), facecolors=(93 / 255, 116 / 255, 162 / 255))
-        ax.broken_barh(self._recv_times, (26, 8), facecolors=(142 / 255, 45 / 255, 48 / 255))
+        # adjust display
+        recv_times = [(i, max(j, 0.05)) for i, j in recv_times]
+        proc_times = [(i, max(j, 0.05)) for i, j in proc_times]
+        send_times = [(i, max(j, 0.05)) for i, j in send_times]
+
+        ax.broken_barh(send_times, (6, 8), facecolors=(51 / 255, 57 / 255, 91 / 255))
+        ax.broken_barh(proc_times, (16, 8), facecolors=(93 / 255, 116 / 255, 162 / 255))
+        ax.broken_barh(recv_times, (26, 8), facecolors=(142 / 255, 45 / 255, 48 / 255))
         ax.set_ylim(0, 40)
-        ax.set_xlim(0, self._max_frames)
+        ax.set_xlim(0, self.vis_max_frame * int(self.sap_factor))
         ax.set_xlabel('Frames since start')
-        ax.set_xticks(range(0, self._max_frames+1, int(self.server.sap_factor)))
+        ax.set_xticks(range(0, self.vis_max_frame * int(self.sap_factor) + 1, int(self.sap_factor)))
         ax.set_yticks([10, 20, 30], labels=['Output', 'Infer', 'Load'])
         ax.xaxis.grid(True)
-        ax.set_title(self.exp_tag)
-        if save_dir:
-            plt.savefig(Path(save_dir) / f'{self.exp_tag}.png')
+        ax.set_title(self.sap_tag)
+        if self.output_dir:
+            path = Path(self.output_dir).joinpath('figures')
+            path.mkdir(exist_ok=True)
+            plt.savefig(str(path.joinpath(f'{self.sap_tag} {self.vis_count}.png')))
+            path.joinpath(f'{self.sap_tag} {self.vis_count}.pkl').write_bytes(pickle.dumps(ax))
+            self.vis_count += 1
         else:
             plt.show()
+
+    def run(self) -> Tuple[Dict[str, float], Dict[str, float]]:
+        all_recv = []
+        all_proc = []
+        all_send = []
+        with SAPServer(
+                data_dir=self.data_dir,
+                ann_file=self.ann_file,
+                output_dir=self.output_dir,
+                sap_factor=self.sap_factor
+        ) as server:
+            client = SAPClient(server)
+            try:
+                # load coco dataset
+                with contextlib.redirect_stdout(io.StringIO()):
+                    coco = COCO(server.ann_file)
+                seqs = coco.dataset['sequences']
+
+                # warm_up
+                demo_input = []
+                for p in list(Path(self.demo_dir).iterdir())[:3]:
+                    demo_input.append(np.asarray(Image.open(p)).copy())
+
+                torch.cuda.synchronize(device=self.model.device)
+
+                with torch.inference_mode():
+                    for i, seq_id in enumerate(tqdm(seqs)):
+                        # init
+                        client.request_stream(seq_id)   # request
+
+                        # during server loading images, do initialization
+                        # cause error if server loads too fast, but highly impossible
+                        # initialize sap
+                        self.strategy.infer_prepare(
+                            model=self.model,
+                            client=client,
+                            sap_factor=self.sap_factor,
+                            dataset_resize_ratio=self.dataset_resize_ratio,
+                            demo_input=demo_input,
+                        )
+
+                        client.get_stream_start_time()  # wait
+                        recv_time, proc_time, send_time = self.strategy.infer(self.model, client, time.perf_counter())
+
+                        all_recv.extend([t[1] for t in recv_time])
+                        all_proc.extend([t[1] for t in proc_time])
+                        all_send.extend([t[1] for t in send_time])
+
+                        if self.visualize and i < 4:
+                            self.plot_time(recv_time, proc_time, send_time)
+
+                        client.stop_stream()
+
+                performance_dict = {
+                    'max recv_time': np.max(all_recv),
+                    'max proc_time': np.max(all_proc),
+                    'max send_time': np.max(all_send),
+                    'min recv_time': np.min(all_recv),
+                    'min proc_time': np.min(all_proc),
+                    'min send_time': np.min(all_send),
+                    'mean recv_time': np.mean(all_recv),
+                    'mean proc_time': np.mean(all_proc),
+                    'mean send_time': np.mean(all_send),
+                    'std recv_time': np.std(all_recv),
+                    'std proc_time': np.std(all_proc),
+                    'std send_time': np.std(all_send),
+                }
+                filename = f'{int(time.time()) % 1000000000}.json'
+                client.generate(filename)
+                return server.get_result(filename), performance_dict
+
+            except KeyboardInterrupt as e:
+                log.warning('Ctrl+C detected. Shutting down sAP server & client.', exc_info=e)
+                raise
+            finally:
+                client.close()

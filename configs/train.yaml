@@ -7,6 +7,7 @@ defaults:
   - datamodule: dummy
   - model: dummy
   - optional sap_strategy: null
+  - speed: null
   - callbacks: default_train
   - logger: tensorboard # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: gpu

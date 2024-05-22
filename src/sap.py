@@ -1,13 +1,18 @@
-from collections import defaultdict
+import contextlib
+import io
+import pickle
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
-import lightning as L
 import rootutils
 import torch
-from lightning import Callback, LightningDataModule, LightningModule, Trainer
-from lightning.pytorch.loggers import Logger
+import torch.multiprocessing as mp
+from kornia.geometry import resize
+from matplotlib import pyplot as plt
 from omegaconf import DictConfig
+from pycocotools.coco import COCO
+from tqdm import tqdm
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -50,11 +55,11 @@ from typing import Optional, Tuple, Dict, Any
 import torch
 
 from src.primitives.model import BaseModel
-from src.primitives.sap_strategy import BaseSAPStrategy, SAPServer, SAPClient
+from src.primitives.sap_strategy import BaseSAPStrategy, SAPServer, SAPClient, SAPRunner
 
 
 @task_wrapper
-def sap(cfg: DictConfig) -> Dict[str, float]:
+def sap(cfg: DictConfig) -> Tuple[Dict[str, float], Dict[str, float]]:
     if platform.system() != 'Linux':
         raise EnvironmentError('sAP evaluation is only supported on Linux!')
 
@@ -77,40 +82,24 @@ def sap(cfg: DictConfig) -> Dict[str, float]:
     data_dir = cfg.get('data_dir')
     ann_file = cfg.get('ann_file')
     output_dir = cfg.get('output_dir')
+    demo_dir = cfg.get('demo_dir')
 
+    sap_tag = cfg.get('sap_tag', None)
     sap_factor = cfg.get('sap_factor', 1.0)
     dataset_resize_ratio = cfg.get('dataset_resize_ratio', 2)
     device_id = cfg.get('device_id', 0)
-    visualize_plot = cfg.get('visualize_plot', False)
-    visualize_print = cfg.get('visualize_print', False)
+    visualize = cfg.get('visualize', False)
 
     model = model.eval().half().to(torch.device(f'cuda:{device_id}'))
 
-    with SAPServer(
-            data_dir=data_dir,
-            ann_file=ann_file,
-            output_dir=output_dir,
-            sap_factor=sap_factor
-    ) as server:
-        client = SAPClient(server, dataset_resize_ratio, device_id)
-        try:
-            return strategy.infer_all(
-                model,
-                server,
-                client,
-                visualize_plot=visualize_plot,
-                visualize_print=visualize_print,
-                output_dir=output_dir,
-            )
-        except KeyboardInterrupt as e:
-            log.warning('Ctrl+C detected. Shutting down sAP server & client.', exc_info=e)
-            raise
-        finally:
-            client.close()
+    runner = SAPRunner(
+        model, strategy, data_dir, ann_file, output_dir, demo_dir, sap_tag, sap_factor, dataset_resize_ratio, visualize
+    )
+    return runner.run()
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="sap.yaml")
-def main(cfg: DictConfig) -> Dict[str, float]:
+def main(cfg: DictConfig) -> float:
     """Main entry point for training.
 
     :param cfg: DictConfig configuration composed by Hydra.
@@ -121,12 +110,13 @@ def main(cfg: DictConfig) -> Dict[str, float]:
     extras(cfg)
 
     # run sap
-    metric_dict = sap(cfg)
+    metric_dict, performance_dict = sap(cfg)
 
-    log.info(f'sAP result: {json.dumps(metric_dict, indent=2)}')
+    log.info(f'sAP metric and performance: {json.dumps(metric_dict | performance_dict, indent=2)}')
 
-    return metric_dict
+    return metric_dict['AP5095']
 
 
 if __name__ == "__main__":
+    mp.set_start_method('spawn')
     main()

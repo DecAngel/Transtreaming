@@ -2,7 +2,7 @@ import contextlib
 import io
 import itertools
 from pathlib import Path
-from typing import Sequence, List
+from typing import Sequence, List, Union
 
 import torch
 from PIL import Image
@@ -22,8 +22,8 @@ class ArgoverseDataSource(BaseDataSource):
             self,
             img_dir: str,
             ann_file: str,
-            image_clip_ids: List[int],
-            bbox_clip_ids: List[int],
+            image_clip_ids: Union[List[int], List[List[int]]],
+            bbox_clip_ids: Union[List[int], List[List[int]]],
             cache: bool = False,
             size: Sequence[int] = (600, 960),
             max_objs: int = 100,

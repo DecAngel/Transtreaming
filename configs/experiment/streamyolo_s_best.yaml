@@ -7,6 +7,7 @@ defaults:
   - override /datamodule: argoverse
   - override /model: streamyolo_s
   - override /sap_strategy: normal
+  - override /speed: s-101
   - _self_
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -17,20 +18,6 @@ tags: ["argoverse", "streamyolo", "s"]
 seed: 12345
 
 ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s.pth
-
-datamodule:
-  train_data_source:
-    image_clip_ids: [ -1, 0 ]
-    bbox_clip_ids: [ 0, 1 ]
-  val_data_source:
-    image_clip_ids: [ -1, 0 ]
-    bbox_clip_ids: [ 1 ]
-  test_data_source:
-    image_clip_ids: [ -1, 0 ]
-    bbox_clip_ids: [ 1 ]
-
-sap_strategy:
-  past_length: 2
 
 model:
   optim:

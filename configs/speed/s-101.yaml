@@ -1,0 +1,19 @@
+# @package _global_
+datamodule:
+  train_data_source:
+    image_clip_ids: [ -1, 0 ]
+    bbox_clip_ids: [ 0, 1 ]
+  val_data_source:
+    image_clip_ids: [ -1, 0 ]
+    bbox_clip_ids: [ 1 ]
+  test_data_source:
+    image_clip_ids: [ -1, 0 ]
+    bbox_clip_ids: [ 1 ]
+
+model:
+  metric:
+    future_time_constant: [1]
+
+sap_strategy:
+  past_length: 2
+  future_length: 1

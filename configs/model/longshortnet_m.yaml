@@ -7,6 +7,8 @@ backbone:
   base_channel: 48
 neck:
   in_channels: [192, 384, 768]
+  remap: False
+  residue: False
 head:
   in_channels: ${model.neck.in_channels}
   mid_channel: 192

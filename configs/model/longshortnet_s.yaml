@@ -8,6 +8,8 @@ backbone:
 neck:
   _target_: src.models.necks.longshort_neck.LongShortNeck
   in_channels: [128, 256, 512]
+  remap: True
+  residue: False
 head:
   _target_: src.models.heads.tal_head.TALHead
   num_classes: 8

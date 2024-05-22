@@ -1,6 +1,8 @@
 import functools
+import itertools
+import random
 import uuid
-from typing import List, Tuple, Dict, Any, Protocol, Optional
+from typing import List, Tuple, Dict, Any, Protocol, Optional, Union
 
 import lightning as L
 import torch
@@ -14,13 +16,14 @@ log = RankedLogger(__name__, rank_zero_only=False)
 
 class BaseDataSource(Dataset):
     """Base data source for video detection datasets"""
-    def __init__(self, image_clip_ids: List[int], bbox_clip_ids: List[int]):
+    def __init__(self, image_clip_ids: Union[List[int], List[List[int]]], bbox_clip_ids: Union[List[int], List[List[int]]]):
         super().__init__()
-        self.image_clip_ids = image_clip_ids
-        self.bbox_clip_ids = bbox_clip_ids
-        self.ici = torch.tensor(image_clip_ids)
-        self.bci = torch.tensor(bbox_clip_ids)
-        indices = image_clip_ids + bbox_clip_ids + [0]
+        self.image_clip_ids = image_clip_ids if isinstance(image_clip_ids[0], int) else list([list(i) for i in image_clip_ids])
+        self.bbox_clip_ids = bbox_clip_ids if isinstance(bbox_clip_ids[0], int) else list([list(i) for i in bbox_clip_ids])
+        if isinstance(image_clip_ids[0], int):
+            indices = image_clip_ids + bbox_clip_ids + [0]
+        else:
+            indices = list(itertools.chain(*image_clip_ids, *bbox_clip_ids, [0]))
         self.margin_left = -min(indices)
         self.margin_right = max(indices)
         self.margin = self.margin_left + self.margin_right
@@ -51,12 +54,19 @@ class BaseDataSource(Dataset):
         for seq_id, seq_len in enumerate(self._length):
             if item < seq_len - self.margin:
                 frame_id = item + self.margin_left
+                if isinstance(self.image_clip_ids[0], list):
+                    i = random.randrange(0, len(self.image_clip_ids))
+                    ici = self.image_clip_ids[i]
+                    bci = self.bbox_clip_ids[i]
+                else:
+                    ici = self.image_clip_ids
+                    bci = self.bbox_clip_ids
                 batch: BatchDict = {
                     'meta': self.get_meta(seq_id, frame_id),
-                    'image': default_collate([self.get_image(seq_id, frame_id+c) for c in self.image_clip_ids]),
-                    'bbox': default_collate([self.get_bbox(seq_id, frame_id+c) for c in self.bbox_clip_ids]),
-                    'image_clip_ids': self.ici,
-                    'bbox_clip_ids': self.bci,
+                    'image': default_collate([self.get_image(seq_id, frame_id+c) for c in ici]),
+                    'bbox': default_collate([self.get_bbox(seq_id, frame_id+c) for c in bci]),
+                    'image_clip_ids': torch.tensor(ici),
+                    'bbox_clip_ids': torch.tensor(bci),
                 }
                 return batch
             else:

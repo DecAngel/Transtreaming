@@ -1,3 +1,4 @@
 _target_: src.sap_strategies.dynamic.DynamicStrategy
 past_length: 2
-threshold: 0.8
+future_length: 1
+threshold: 0.9

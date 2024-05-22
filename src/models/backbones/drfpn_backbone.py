@@ -26,6 +26,7 @@ class DRFPNBackbone(BaseBackbone):
         ('.bu_conv1.', '.up_conv_4_4.'),
         ('.C3_n4.', '.up_csp_4_5.'),
         ('neck.', 'backbone.neck.'),
+        ('backbone.backbone.neck.', 'backbone.neck.')
     ]
 
     def __init__(

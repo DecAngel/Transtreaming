@@ -154,3 +154,6 @@ configs/local/default.yaml
 .aim
 
 /_legacy/
+/tests/
+/scripts/
+/notebooks/

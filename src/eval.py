@@ -27,6 +27,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 torch.set_float32_matmul_precision('high')
+torch.backends.cudnn.benchmark = True
 
 from src.utils import (
     RankedLogger,

@@ -1,0 +1,4 @@
+tb:
+  _target_: src.services.tb_service.TBService
+  log_dir: ${paths.log_dir}train/runs/
+  port: 9391

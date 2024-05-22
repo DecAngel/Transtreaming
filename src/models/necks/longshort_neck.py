@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Literal
 
 import torch
 from torch import nn
@@ -13,6 +13,9 @@ class LongShortNeck(BaseNeck):
         ('long_backbone.group_0_jian2', 'neck.long_convs.0'),
         ('long_backbone.group_0_jian1', 'neck.long_convs.1'),
         ('long_backbone.group_0_jian0', 'neck.long_convs.2'),
+        ('long_backbone.group_1_jian2', 'neck.long_convs_r.0'),
+        ('long_backbone.group_1_jian1', 'neck.long_convs_r.1'),
+        ('long_backbone.group_1_jian0', 'neck.long_convs_r.2'),
         ('short_backbone.group_0_jian2', 'neck.short_convs.0'),
         ('short_backbone.group_0_jian1', 'neck.short_convs.1'),
         ('short_backbone.group_0_jian0', 'neck.short_convs.2'),
@@ -26,12 +29,20 @@ class LongShortNeck(BaseNeck):
     def __init__(
             self,
             in_channels: Tuple[int, ...],
+            remap: bool = True,
+            residue: bool = False,
     ):
         """Implement LongShortNet with N=3, delta=1, LSFM-Lf-Dil. (The best setting)
 
         :param in_features: The channels of FPN features.
+        :param remap: align long_convs channels with short_convs
+        :param residue: add long_convs_r
         """
         super().__init__()
+        self.in_channels = in_channels
+        self.remap = remap
+        self.residue = residue
+
         self.short_convs = nn.ModuleList([
             BaseConv(f, f // 2, ksize=1, stride=1)
             for f in in_channels
@@ -40,10 +51,17 @@ class LongShortNeck(BaseNeck):
             BaseConv(f, f // 6, ksize=1, stride=1)
             for f in in_channels
         ])
-        self.long_2_convs = nn.ModuleList([
-            BaseConv((f // 6) * 3, f - (f // 2), ksize=1, stride=1)
-            for f in in_channels
-        ])
+        if self.residue:
+            self.long_convs_r = nn.ModuleList([
+                BaseConv(f, f - f // 2 - 2 * (f // 6), ksize=1, stride=1)
+                for f in in_channels
+            ])
+
+        if self.remap:
+            self.long_2_convs = nn.ModuleList([
+                BaseConv(f - f // 2 if self.residue else (f // 6) * 3, f - (f // 2), ksize=1, stride=1)
+                for f in in_channels
+            ])
 
         def init_yolo(M):
             for m in M.modules():
@@ -68,9 +86,13 @@ class LongShortNeck(BaseNeck):
             short = self.short_convs[i](short)
             l1 = self.long_convs[i](l1)
             l2 = self.long_convs[i](l2)
-            l3 = self.long_convs[i](l3)
+            if self.residue:
+                l3 = self.long_convs_r[i](l3)
+            else:
+                l3 = self.long_convs[i](l3)
             long = torch.cat([l1, l2, l3], dim=1)
-            long = self.long_2_convs[i](long)
+            if self.remap:
+                long = self.long_2_convs[i](long)
             outputs.append((torch.cat([short, long], dim=1) + f[:, -1]).unsqueeze(1))
 
         return tuple(outputs)

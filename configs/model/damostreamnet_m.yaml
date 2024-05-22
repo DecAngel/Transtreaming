@@ -9,6 +9,8 @@ backbone:
   hidden_ratio: 1.0
 neck:
   in_channels: [192, 384, 768]
+  remap: True
+  residue: False
 head:
   in_channels: ${model.neck.in_channels}
   mid_channel: 192

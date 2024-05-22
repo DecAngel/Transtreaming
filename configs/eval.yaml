@@ -5,6 +5,7 @@ defaults:
   - datamodule: dummy # choose datamodule with `test_dataloader()` for evaluation
   - model: dummy
   - optional sap_strategy: null
+  - speed: null
   - callbacks: default_test
   - logger: null
   - trainer: gpu

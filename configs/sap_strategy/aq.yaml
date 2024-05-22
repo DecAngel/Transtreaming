@@ -1,0 +1,3 @@
+_target_: src.sap_strategies.aq.AdaptiveQueryStrategy
+past_length: 2
+future_length: 1

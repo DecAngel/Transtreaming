@@ -1,14 +1,12 @@
 _target_: src.primitives.model.BaseModel
 backbone:
-  _target_: src.models.backbones.drfpn_backbone.DRFPNBackbone
+  _target_: src.models.backbones.pafpn_backbone.PAFPNBackbone
   base_depth: 1
   base_channel: 32
-  base_neck_depth: 3
-  hidden_ratio: 0.75
   depthwise: False
   act: "silu"
 neck:
-  _target_: src.models.necks.aq_neck.AQNeck
+  _target_: src.models.necks.tat_neck.TATNeck
   in_channels: [128, 256, 512]
   num_heads: 1
   window_size: [8, 8]
@@ -64,7 +62,7 @@ metric:
   test_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
   future_time_constant: [1]
 optim:
-  _target_: src.models.optims.traque_optim.TRAQueOptim
+  _target_: src.models.optims.ts_optim.TSOptim
   lr: 0.001
   momentum: 0.9
   weight_decay: 5e-4

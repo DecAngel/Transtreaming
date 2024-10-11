@@ -5,7 +5,7 @@
 
 defaults:
   - override /datamodule: argoverse
-  - override /model: aq_drfpn_l
+  - override /model: ts_drfpn_l
   - override /sap_strategy: normal
   - override /speed: s-3-2-101
   - _self_
@@ -13,20 +13,8 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["argoverse", "drfpn", "aq", "l"]
+tags: ["argoverse", "drfpn", "transtreaming", "l"]
 
 seed: 12345
 
 ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_l_drfpn.pth
-
-model:
-  head:
-    conf_thre: 0.0015
-    nms_thre: 0.55
-    gamma: 1.0
-    ignore_thr: 0.71
-    ignore_value: 1.78
-  optim:
-    lr: 0.0013
-    momentum: 0.91
-    weight_decay: 0.001

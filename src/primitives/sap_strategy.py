@@ -35,7 +35,6 @@ import torch
 from sap_toolkit.client import EvalClient
 from sap_toolkit.generated import eval_server_pb2
 
-
 coco_eval_metric_names = [
     ('Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = ', 'AP5095'),
     ('Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = ', 'AP50'),
@@ -455,6 +454,9 @@ class SAPRunner:
                         all_recv.extend([t[1] for t in recv_time])
                         all_proc.extend([t[1] for t in proc_time])
                         all_send.extend([t[1] for t in send_time])
+
+                        for t1, t2, t3 in zip(recv_time[:40], proc_time[:40], send_time[:40]):
+                            print(f'{(t1[1]+t2[1]+t3[1])*100/3:.4f}')
 
                         if self.visualize and i < 4:
                             self.plot_time(recv_time, proc_time, send_time)

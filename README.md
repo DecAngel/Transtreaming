@@ -4,7 +4,7 @@
 ```shell
 conda env create -f environment.yaml
 ```
-- Download Argoverse-HD and put inside ./data
+- Download Argoverse-HD inside ./data
 
 ## Run
 - training

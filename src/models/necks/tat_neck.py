@@ -143,7 +143,7 @@ class RelativePositionalEncoding3D(nn.Module):
         return torch.stack(res, dim=0).permute(0, 3, 1, 2).contiguous()
 
 
-class FPCAWindowAttention(nn.Module):
+class TATWindowAttention(nn.Module):
     def __init__(self, in_channel: int, hidden_channel: int, window_size: Tuple[int, int], num_heads: int):
         super().__init__()
         self.in_channel = in_channel
@@ -193,7 +193,7 @@ class FPCAWindowAttention(nn.Module):
         return x, attn
 
 
-class FPCALayer(nn.Module):
+class TATLayer(nn.Module):
     def __init__(
             self,
             in_channels: Tuple[int, ...],
@@ -203,7 +203,7 @@ class FPCALayer(nn.Module):
             shift: bool,
             dropout: float = 0.05,
     ):
-        super(FPCALayer, self).__init__()
+        super(TATLayer, self).__init__()
         self.in_channels = in_channels
         self.hidden_channel = hidden_channel
         self.num_heads = num_heads
@@ -221,7 +221,7 @@ class FPCALayer(nn.Module):
             )
             for c in self.in_channels
         ])
-        self.attn = FPCAWindowAttention(hidden_channel, hidden_channel, window_size, num_heads)
+        self.attn = TATWindowAttention(hidden_channel, hidden_channel, window_size, num_heads)
         self.fc_out = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(self.hidden_channel, self.hidden_channel, bias=True),
@@ -279,7 +279,7 @@ class FPCALayer(nn.Module):
         return x
 
 
-class AQNeck(BaseNeck):
+class TATNeck(BaseNeck):
     input_frames: int = 4
     output_frames: int = 1
 
@@ -302,7 +302,7 @@ class AQNeck(BaseNeck):
 
         self.rpe = RelativePositionalEncoding3D(window_size=self.window_size, num_heads=self.num_heads)
         self.layers = nn.ModuleList([
-            FPCALayer(self.in_channels, self.hidden_channel, window_size, num_heads, d % 2 != 0, self.dropout)
+            TATLayer(self.in_channels, self.hidden_channel, window_size, num_heads, d % 2 != 0, self.dropout)
             for d in range(depth)
         ])
 

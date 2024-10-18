@@ -2,7 +2,7 @@ from typing import Optional, Union
 
 import torch
 
-from src.primitives.batch import PYRAMID, COORDINATE, LABEL, SIZE, BBoxDict, LossDict
+from src.primitives.batch import PYRAMID, COORDINATE, LABEL, SIZE, BBoxDict, LossDict, TIME
 from src.primitives.model import BaseHead
 from src.utils.pylogger import RankedLogger
 
@@ -18,6 +18,8 @@ class DummyHead(BaseHead):
     def forward(
             self,
             features: PYRAMID,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
             gt_coordinate: Optional[COORDINATE] = None,
             gt_label: Optional[LABEL] = None,
             shape: Optional[SIZE] = None,

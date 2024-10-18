@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 import math
 
-from src.primitives.batch import BatchDict, PYRAMID, COORDINATE, LABEL, SIZE, LossDict, BBoxDict
+from src.primitives.batch import BatchDict, PYRAMID, COORDINATE, LABEL, SIZE, LossDict, BBoxDict, TIME
 from src.primitives.model import BaseHead
 from src.models.layers.network_blocks import BaseConv, DWConv
 from src.models.layers.iou_loss import IOUloss
@@ -169,6 +169,8 @@ class TALHead(BaseHead):
     def forward(
             self,
             features: PYRAMID,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
             gt_coordinates: Optional[COORDINATE] = None,
             gt_labels: Optional[LABEL] = None,
             shape: Optional[SIZE] = None,

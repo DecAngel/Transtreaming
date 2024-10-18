@@ -2,12 +2,15 @@
 
 defaults:
   - _self_
-  - datamodule: dummy # choose datamodule with `test_dataloader()` for evaluation
+  - datamodule: dummy
   - model: dummy
   - optional sap_strategy: null
   - speed: null
-  - callbacks: default_test
-  - logger: null
+  - callbacks:
+    - model_summary
+    - tqdm_progress_bar
+  - loggers:
+    - tensorboard
   - trainer: gpu
   - paths: default
   - extras: default

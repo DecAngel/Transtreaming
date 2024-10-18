@@ -9,15 +9,15 @@ from src.utils.pylogger import RankedLogger
 log = RankedLogger(__name__, rank_zero_only=False)
 
 
-class Debugger(Callback):
+class VisualizeBatch(Callback):
     def __init__(self):
         super().__init__()
-        self.batches = []
+        self.batch_image_ids = []
         self._state = None
 
     def change(self):
-        log.info(f'{self.state} epoch image_ids: {self.batches}')
-        self.batches.clear()
+        log.info(f'{self.state} epoch image_ids: {self.batch_image_ids}')
+        self.batch_image_ids.clear()
 
     @property
     def state(self):
@@ -52,7 +52,7 @@ class Debugger(Callback):
     def on_train_batch_end(
         self, trainer: L.Trainer, pl_module: BaseModel, outputs: LossDict, batch: BatchDict, batch_idx: int
     ) -> None:
-        self.batches.extend(batch["meta"]["image_id"].cpu().tolist())
+        self.batch_image_ids.extend(batch["meta"]["image_id"].cpu().tolist())
 
     def on_validation_batch_end(
         self,
@@ -63,7 +63,7 @@ class Debugger(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
-        self.batches.extend(batch["meta"]["image_id"].cpu().tolist())
+        self.batch_image_ids.extend(batch["meta"]["image_id"].cpu().tolist())
 
     def on_test_batch_end(
         self,
@@ -74,4 +74,4 @@ class Debugger(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
-        self.batches.extend(batch["meta"]["image_id"].cpu().tolist())
+        self.batch_image_ids.extend(batch["meta"]["image_id"].cpu().tolist())

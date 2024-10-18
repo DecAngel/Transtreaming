@@ -47,7 +47,7 @@ def get_activation(act: str, inplace: bool = True):
     return m
 
 
-__all__ = ['HybridEncoder']
+# __all__ = ['HybridEncoder']
 
 
 class ConvNormLayer(nn.Module):
@@ -173,12 +173,16 @@ class TransformerEncoderLayer(nn.Module):
     def with_pos_embed(tensor, pos_embed):
         return tensor if pos_embed is None else tensor + pos_embed
 
-    def forward(self, src, src_mask=None, pos_embed=None) -> torch.Tensor:
+    def forward(self, src, extra=None, src_mask=None, pos_embed=None) -> torch.Tensor:
         residual = src
         if self.normalize_before:
             src = self.norm1(src)
         q = k = self.with_pos_embed(src, pos_embed)
-        src, _ = self.self_attn(q, k, value=src, attn_mask=src_mask)
+        v = src
+        if extra is not None:
+            k = torch.cat((extra, k), dim=1)
+            v = torch.cat((extra, v), dim=1)
+        src, _ = self.self_attn(q, k, value=v, attn_mask=src_mask)
 
         src = residual + self.dropout1(src)
         if not self.normalize_before:
@@ -201,10 +205,10 @@ class TransformerEncoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, src, src_mask=None, pos_embed=None) -> torch.Tensor:
+    def forward(self, src, extra=None, src_mask=None, pos_embed=None) -> torch.Tensor:
         output = src
         for layer in self.layers:
-            output = layer(output, src_mask=src_mask, pos_embed=pos_embed)
+            output = layer(output, extra=extra, src_mask=src_mask, pos_embed=pos_embed)
 
         if self.norm is not None:
             output = self.norm(output)

@@ -1,6 +1,7 @@
 from typing import TypedDict, Tuple, Union, List
 
 import torch
+from torchvision.tv_tensors import Image, BoundingBoxes, BoundingBoxFormat
 from jaxtyping import UInt8, Float, Int, Shaped
 
 

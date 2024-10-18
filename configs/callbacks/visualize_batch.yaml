@@ -1,0 +1,2 @@
+visualize_batch:
+  _target_: src.callbacks.visualize_batch.VisualizeBatch

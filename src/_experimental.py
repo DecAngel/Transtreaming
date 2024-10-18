@@ -47,7 +47,7 @@ from src.utils import (
 log = RankedLogger(__name__, rank_zero_only=True)
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="eval.yaml")
+@hydra.main(version_base="1.3", config_path="../configs", config_name="_experimental.yaml")
 def main(cfg: DictConfig):
     model = hydra.utils.instantiate(cfg.model)
     path = cfg.get("ckpt_path")

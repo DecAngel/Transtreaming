@@ -90,6 +90,8 @@ class BaseHead(BlockMixin, nn.Module):
     def forward(
             self,
             features: PYRAMID,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
             gt_coordinate: Optional[COORDINATE] = None,
             gt_label: Optional[LABEL] = None,
             shape: Optional[SIZE] = None,
@@ -253,7 +255,7 @@ class BaseModel(L.LightningModule):
         # inference
         features_p = self.backbone(image)
         features_f = self.neck(features_p, pci, fci)
-        loss_pred = self.head(features_f, gt_coordinate, gt_label, shape)
+        loss_pred = self.head(features_f, pci, fci, gt_coordinate, gt_label, shape)
         return loss_pred
 
     def inference_backbone_neck(
@@ -295,10 +297,12 @@ class BaseModel(L.LightningModule):
     def inference_head(
             self,
             features_f: PYRAMID,
+            past_clip_ids: TIME,
+            future_clip_ids: TIME,
             shape: Optional[SIZE] = None
     ) -> BBoxDict:
         """Get detection"""
-        return self.head(features_f, None, None, shape)
+        return self.head(features_f, past_clip_ids, future_clip_ids, None, None, shape)
 
     def forward(self, batch: BatchDict) -> Union[BatchDict, LossDict]:
         with torch.inference_mode():
@@ -337,7 +341,7 @@ class BaseModel(L.LightningModule):
             feature_f, features_p = self.inference_backbone_neck(
                 image, past_clip_ids, future_clip_ids, buffer
             )
-            return self.inference_head(feature_f, shape), features_p
+            return self.inference_head(feature_f, past_clip_ids, future_clip_ids, shape), features_p
 
     def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         output: LossDict = self(batch)

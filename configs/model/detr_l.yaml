@@ -1,0 +1,83 @@
+_target_: src.primitives.model.BaseModel
+backbone:
+  _target_: src.models.backbones.presnet_backbone.PResNetBackbone
+  depth: 50
+  variant: d
+  freeze_at: 0
+  return_idx: [1, 2, 3]
+  num_stages: 4
+  freeze_norm: True
+  pretrained: True
+
+neck:
+  _target_: src.models.necks.hybrid_neck.HybridEncoderNeck
+  in_channels: [512, 1024, 2048]
+  feat_strides: [8, 16, 32]
+
+  # intra
+  hidden_dim: 256
+  use_encoder_idx: [2]
+  num_encoder_layers: 1
+  nhead: 8
+  dim_feedforward: 1024
+  dropout: 0.
+  enc_act: 'gelu'
+
+  # cross
+  expansion: 1.0
+  depth_mult: 1
+  act: 'silu'
+
+  # diff
+  diff_stride: 1
+  diff_radius: 4
+
+head:
+  _target_: src.models.heads.detr_head.RTDETRTransformerv2
+  _convert_: all
+  feat_channels: [256, 256, 256]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 256
+  num_levels: 3
+
+  num_layers: 6
+  num_queries: 300
+
+  num_denoising: 100
+  label_noise_ratio: 0.5
+  box_noise_scale: 1.0 # 1.0 0.4
+
+  eval_idx: -1
+
+  # NEW
+  num_points: [4, 4, 4] # [3,3,3] [2,2,2]
+  cross_attn_method: default # default, discrete
+  query_select_method: default # default, agnostic
+transform:
+  _target_: src.models.transforms.kornia_transform.KorniaTransform
+  train_aug:
+    -
+      _target_: kornia.augmentation.ColorJitter
+      brightness: 0.5
+      contrast: 0.5
+      saturation: 0.5
+      hue: 0.5
+    -
+      _target_: kornia.augmentation.RandomHorizontalFlip
+      p: 0.5
+  train_size: [[496, 800], [496, 816], [512, 832], [528, 848], [528, 864], [544, 880], [560, 896], [560, 912], [576, 928], [576, 944], [592, 960], [608, 976], [608, 992], [624, 1008], [640, 1024], [640, 1040], [656, 1056], [656, 1072], [672, 1088], [688, 1104], [688, 1120]]
+  eval_size: [600, 960]
+  original_size: True
+metric:
+  _target_: src.models.metrics.cocoeval_metric.COCOEvalMetric
+  eval_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+  test_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+  future_time_constant: [1]
+optim:
+  _target_: src.models.optims.detr_optim.DETROptim
+  lr: 0.00001
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+  gamma: 0.1
+
+torch_compile: null

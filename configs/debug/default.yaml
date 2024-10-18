@@ -7,8 +7,9 @@
 task_name: "debug"
 
 # disable callbacks and loggers during debugging
-callbacks: null
-logger: null
+# Do not disable callbacks and loggers
+# callbacks: null
+# loggers: null
 
 extras:
   ignore_warnings: False

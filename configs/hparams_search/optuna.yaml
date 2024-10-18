@@ -45,15 +45,7 @@ hydra:
       n_startup_trials: 8 # number of random sampling runs before optimization starts
 
     # define hyperparameter search space
-    params:
-      seed: choice(12341, 12342, 12343, 12344, 12345, 12346, 12347, 12348, 12349, 12350)
-      model.optim.lr: interval(0.001, 0.003)
-      model.optim.momentum: interval(0.85, 0.95)
-      model.optim.weight_decay: interval(1e-4, 5e-3)
-      # model.head.conf_thre: interval(0.001, 0.1)
-      # model.head.nms_thre: interval(0.4, 0.7)
-      model.head.ignore_thr: interval(0.6, 0.9)
-      model.head.ignore_value: interval(1.6, 2.0)
+    params: /hparams_search/hp_1
 
   launcher:
     _target_: hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher

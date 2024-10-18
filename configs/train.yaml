@@ -8,8 +8,15 @@ defaults:
   - model: dummy
   - optional sap_strategy: null
   - speed: null
-  - callbacks: default_train
-  - logger: tensorboard # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - callbacks:
+    - model_checkpoint
+    - early_stopping
+    - model_summary
+    - tqdm_progress_bar
+    - ema
+    - lr_monitor
+  - loggers:
+    - tensorboard
   - trainer: gpu
   - paths: default
   - extras: default

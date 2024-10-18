@@ -2,7 +2,7 @@ import contextlib
 import io
 import itertools
 from pathlib import Path
-from typing import Sequence, List, Union
+from typing import Sequence, List, Union, Optional, Callable
 
 import torch
 from PIL import Image
@@ -10,11 +10,19 @@ from pycocotools.coco import COCO
 from torchvision.transforms import PILToTensor
 
 from src.primitives.datamodule import BaseDataSource
+from src.primitives.model import BlockMixin
 
 from src.utils import RankedLogger
 from src.primitives.batch import MetaDict, ImageDict, BBoxDict
 
 logger = RankedLogger(__name__, rank_zero_only=False)
+
+
+def sample(block: BlockMixin, max_id, include_zero: bool = True, k: int = 3) -> List[int]:
+    percent = block.fraction_epoch / block.total_epoch
+    direction = max_id > 0
+    if percent < 0.5:
+        pass
 
 
 class ArgoverseDataSource(BaseDataSource):
@@ -24,11 +32,13 @@ class ArgoverseDataSource(BaseDataSource):
             ann_file: str,
             image_clip_ids: Union[List[int], List[List[int]]],
             bbox_clip_ids: Union[List[int], List[List[int]]],
+            image_clip_fn: Optional[Callable[[BlockMixin], List[int]]] = None,
+            bbox_clip_fn: Optional[Callable[[BlockMixin], List[int]]] = None,
             cache: bool = False,
             size: Sequence[int] = (600, 960),
             max_objs: int = 100,
     ):
-        super().__init__(image_clip_ids, bbox_clip_ids)
+        super().__init__(image_clip_ids, bbox_clip_ids, image_clip_fn, bbox_clip_fn)
         self.img_dir = Path(img_dir)
         self.ann_file = Path(ann_file)
         self.cache = cache

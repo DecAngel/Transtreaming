@@ -112,6 +112,14 @@ class KorniaTransform(BaseTransform):
                 coordinates = torch.cat([xy_min, xy_max], dim=-1)
                 batch[key]['coordinate'] = coordinates
 
+                # filter bounding box
+                """
+                B, T, O, _ = coordinates.shape
+                for b in range(B):
+                    for t in range(T):
+                        mask = coordinates[b, t, :, 0]
+                """
+
         return batch
 
     def preprocess(self, batch: BatchDict) -> BatchDict:

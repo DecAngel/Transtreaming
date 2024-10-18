@@ -2,7 +2,7 @@ import functools
 import itertools
 import random
 import uuid
-from typing import List, Tuple, Dict, Any, Protocol, Optional, Union
+from typing import List, Tuple, Dict, Any, Protocol, Optional, Union, Callable
 
 import lightning as L
 import torch
@@ -10,20 +10,26 @@ from torch.utils.data import Dataset, default_collate, DataLoader
 
 from src.primitives.batch import MetaDict, ImageDict, BBoxDict, BatchDict
 from src.utils.pylogger import RankedLogger
+from src.primitives.model import BlockMixin
 
 log = RankedLogger(__name__, rank_zero_only=False)
 
 
-class BaseDataSource(Dataset):
+class BaseDataSource(BlockMixin, Dataset):
     """Base data source for video detection datasets"""
-    def __init__(self, image_clip_ids: Union[List[int], List[List[int]]], bbox_clip_ids: Union[List[int], List[List[int]]]):
+    def __init__(
+            self,
+            image_clip_ids: List[int],
+            bbox_clip_ids: List[int],
+            image_clip_fn: Optional[Callable[[BlockMixin], List[int]]] = None,
+            bbox_clip_fn: Optional[Callable[[BlockMixin], List[int]]] = None,
+    ):
         super().__init__()
-        self.image_clip_ids = image_clip_ids if isinstance(image_clip_ids[0], int) else list([list(i) for i in image_clip_ids])
-        self.bbox_clip_ids = bbox_clip_ids if isinstance(bbox_clip_ids[0], int) else list([list(i) for i in bbox_clip_ids])
-        if isinstance(image_clip_ids[0], int):
-            indices = image_clip_ids + bbox_clip_ids + [0]
-        else:
-            indices = list(itertools.chain(*image_clip_ids, *bbox_clip_ids, [0]))
+        self.image_clip_ids = image_clip_ids
+        self.bbox_clip_ids = bbox_clip_ids
+        self.image_clip_fn = image_clip_fn
+        self.bbox_clip_fn = bbox_clip_fn
+        indices = image_clip_ids + bbox_clip_ids + [0]
         self.margin_left = -min(indices)
         self.margin_right = max(indices)
         self.margin = self.margin_left + self.margin_right
@@ -54,13 +60,10 @@ class BaseDataSource(Dataset):
         for seq_id, seq_len in enumerate(self._length):
             if item < seq_len - self.margin:
                 frame_id = item + self.margin_left
-                if isinstance(self.image_clip_ids[0], list):
-                    i = random.randrange(0, len(self.image_clip_ids))
-                    ici = self.image_clip_ids[i]
-                    bci = self.bbox_clip_ids[i]
-                else:
-                    ici = self.image_clip_ids
-                    bci = self.bbox_clip_ids
+
+                ici = self.image_clip_fn(self) if self.image_clip_fn else self.image_clip_ids
+                bci = self.bbox_clip_fn(self) if self.bbox_clip_fn else self.bbox_clip_ids
+
                 batch: BatchDict = {
                     'meta': self.get_meta(seq_id, frame_id),
                     'image': default_collate([self.get_image(seq_id, frame_id+c) for c in ici]),
@@ -145,6 +148,12 @@ class BaseDataModule(L.LightningDataModule):
                 self.data_space[self.TEST_NAMESPACE] = self.test_data_source.__getstate__()
 
     def setup(self, stage: str) -> None:
+        if isinstance(self.train_data_source, BlockMixin):
+            self.train_data_source.trainer = self.trainer
+        if isinstance(self.val_data_source, BlockMixin):
+            self.val_data_source.trainer = self.trainer
+        if isinstance(self.test_data_source, BlockMixin):
+            self.test_data_source.trainer = self.trainer
         if self.data_space is not None:
             # post init
             if stage == 'fit':

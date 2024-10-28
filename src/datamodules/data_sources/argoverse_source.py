@@ -18,20 +18,13 @@ from src.primitives.batch import MetaDict, ImageDict, BBoxDict
 logger = RankedLogger(__name__, rank_zero_only=False)
 
 
-def sample(block: BlockMixin, max_id, include_zero: bool = True, k: int = 3) -> List[int]:
-    percent = block.fraction_epoch / block.total_epoch
-    direction = max_id > 0
-    if percent < 0.5:
-        pass
-
-
 class ArgoverseDataSource(BaseDataSource):
     def __init__(
             self,
             img_dir: str,
             ann_file: str,
-            image_clip_ids: Union[List[int], List[List[int]]],
-            bbox_clip_ids: Union[List[int], List[List[int]]],
+            image_clip_ids: List[int],
+            bbox_clip_ids: List[int],
             image_clip_fn: Optional[Callable[[BlockMixin], List[int]]] = None,
             bbox_clip_fn: Optional[Callable[[BlockMixin], List[int]]] = None,
             cache: bool = False,

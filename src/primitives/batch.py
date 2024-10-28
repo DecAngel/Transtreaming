@@ -1,14 +1,14 @@
 from typing import TypedDict, Tuple, Union, List
 
 import torch
-from torchvision.tv_tensors import Image, BoundingBoxes, BoundingBoxFormat
 from jaxtyping import UInt8, Float, Int, Shaped
 
 
 META = Int[torch.Tensor, '*batch']
 IMAGE_RAW = UInt8[torch.Tensor, '*batch_time channels_rgb=3 height width']
 IMAGE = Float[torch.Tensor, '*batch_time channels_rgb=3 height width']
-PYRAMID = Tuple[Float[torch.Tensor, '*batch_time channels height width'], ...]
+FEATURE = Float[torch.Tensor, '*batch_time channels height width']
+PYRAMID = Tuple[FEATURE, ...]
 COORDINATE = Float[torch.Tensor, '*batch_time max_objs coords_xyxy=4']
 PROBABILITY = Float[torch.Tensor, '*batch_time max_objs']
 LABEL = Int[torch.Tensor, '*batch_time max_objs']
@@ -59,6 +59,57 @@ class BBoxDict(TypedDict):
     probability: PROBABILITY
 
 
+class LossDict(TypedDict, total=False):
+    """Loss tensor component of a batch.
+
+    **loss**: the computed loss of the batch
+
+    Can also include additional losses
+    """
+    loss: SCALAR
+
+
+class IntermediateDict(TypedDict, total=False):
+    """Intermediate tensor component of a batch.
+
+    **features_p**: the features of the past
+
+    **features_f**: the features of the future
+
+    **features_flow**: the features of intermediate flows
+
+    Can also include additional features
+    """
+    features_p: PYRAMID
+    features_f: PYRAMID
+    features_flow: FEATURE
+
+
+class MetricDict(TypedDict, total=False):
+    """Metric tensor component of a batch.
+
+    **mAP**: the computed mean Average Precision
+
+    **sAP**: the computed streaming mAP
+
+    Can also include additional metrics
+    """
+    mAP: SCALAR
+    sAP: SCALAR
+
+
+class BufferDict(TypedDict, total=False):
+    """Buffer tensor component of a batch.
+
+    **features_p**: past features
+
+    **features_flow**: the features of intermediate flows
+
+    """
+    features_p: PYRAMID
+    features_flow: FEATURE
+
+
 class BatchDict(TypedDict, total=False):
     meta: MetaDict
     image: ImageDict
@@ -66,17 +117,9 @@ class BatchDict(TypedDict, total=False):
     bbox_pred: BBoxDict
     image_clip_ids: TIME
     bbox_clip_ids: TIME
-
-
-class BufferDict(TypedDict, total=False):
-    buffer_list: List[PYRAMID]
-    buffer_clip_id_list: List[int]
-
-
-class LossDict(TypedDict, total=False):
-    loss: SCALAR
-
-
-class MetricDict(TypedDict, total=False):
-    mAP: SCALAR
-    sAP: SCALAR
+    past_clip_ids: TIME
+    future_clip_ids: TIME
+    loss: LossDict | SCALAR
+    intermediate: IntermediateDict
+    metric: MetricDict
+    buffer: BufferDict

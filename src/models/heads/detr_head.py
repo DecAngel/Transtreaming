@@ -15,7 +15,7 @@ from src.utils.detr_utils import (
     deformable_attention_core_func_v2, bias_init_with_prob, HungarianMatcher
 )
 from src.models.layers.detr import TransformerDecoderLayer, TransformerDecoder, MLP, RTDETRCriterionv2, RTDETRPostProcessor
-from src.primitives.batch import PYRAMID, TIME, COORDINATE, LABEL, SIZE, BBoxDict, LossDict
+from src.primitives.batch import PYRAMID, TIME, COORDINATE, LABEL, SIZE, BBoxDict, LossDict, BatchDict
 from src.primitives.model import BaseHead
 
 
@@ -302,25 +302,21 @@ class RTDETRTransformerv2(BaseHead):
 
         return topk_memory, topk_logits, topk_coords
 
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-            gt_coordinate: Optional[COORDINATE] = None,
-            gt_label: Optional[LABEL] = None,
-            shape: Optional[SIZE] = None,
-    ) -> Union[BBoxDict, LossDict]:
-        feats = features
-        if gt_coordinate is not None:
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_f']
+        gt_coordinates = batch['bbox']['coordinate'] if 'bbox' in batch else None
+        gt_labels = batch['bbox']['label'] if 'bbox' in batch else None
+        shape = tuple(batch['meta']['current_size'][0].cpu().tolist())
+
+        if gt_coordinates is not None:
             targets = [{
                 'labels': l[0],
                 'boxes': c[0],
-            } for c, l in zip(gt_coordinate, gt_label.long())]
+            } for c, l in zip(gt_coordinates, gt_labels.long())]
         else:
             targets = None
 
-        memory, spatial_shapes = self._get_encoder_input(feats)
+        memory, spatial_shapes = self._get_encoder_input(list(features))
 
         # prepare denoising training
         if self.training and self.num_denoising > 0:
@@ -366,9 +362,11 @@ class RTDETRTransformerv2(BaseHead):
 
         if self.training:
             # loss
-            return self.criterion(out, targets)
+            batch['loss'] = self.criterion(out, targets)
         else:
+            # TODO: fix
             return self.postprocessor(out, shape)
+        return batch
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):

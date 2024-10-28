@@ -2,7 +2,7 @@ from typing import Tuple
 
 from torch import nn
 
-from src.primitives.batch import IMAGE, PYRAMID
+from src.primitives.batch import IMAGE, PYRAMID, BatchDict
 from src.primitives.model import BaseBackbone
 from src.utils.pylogger import RankedLogger
 
@@ -18,7 +18,8 @@ class DummyBackbone(BaseBackbone):
             self.linear.append(nn.Conv2d(c1, c2, 1, 1))
             self.pool.append(nn.MaxPool2d(kernel_size=(2, 2), stride=2))
 
-    def forward(self, image: IMAGE) -> PYRAMID:
+    def forward(self, batch: BatchDict) -> BatchDict:
+        image = batch['image']['image']
         logger.debug(f'Input shape: {tuple(image.shape)}')
         B, T, C, H, W = image.shape
         features = []
@@ -26,4 +27,5 @@ class DummyBackbone(BaseBackbone):
         for l, p in zip(self.linear, self.pool):
             x = p(l(x))
             features.append(x.unflatten(0, (B, T)))
-        return tuple(features)
+        batch['intermediate']['features_p'] = tuple(features)
+        return batch

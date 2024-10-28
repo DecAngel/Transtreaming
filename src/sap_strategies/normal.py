@@ -1,5 +1,5 @@
 from src.primitives.model import BaseModel
-from src.primitives.sap_strategy import BaseSAPStrategy, SAPClient
+from src.primitives.sap import BaseSAPStrategy, SAPClient
 
 from src.utils.pylogger import RankedLogger
 
@@ -23,7 +23,11 @@ class NormalStrategy(BaseSAPStrategy):
                 # end of sequence
                 break
 
-            frame_id, delta, image = inp
+            inp['past_clip_ids'] = self.past_clip_ids
+            inp['future_clip_ids'] = self.future_clip_ids
+            if buffer is not None:
+                inp['buffer'] = buffer
 
-            res, buffer = self.proc_fn(image, self.past_clip_ids, self.future_clip_ids, buffer, model)
+            res = self.proc_fn(model, inp)
+            buffer = res['buffer']
             self.send_fn(res, client)

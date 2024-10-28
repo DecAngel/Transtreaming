@@ -3,7 +3,7 @@ from typing import Callable, Tuple, Dict, Optional
 import torch
 
 from src.primitives.batch import IMAGE, BBoxDict, TIME, PYRAMID
-from src.primitives.sap_strategy import BaseSAPStrategy
+from src.primitives.sap import BaseSAPStrategy
 
 from src.utils.pylogger import RankedLogger
 

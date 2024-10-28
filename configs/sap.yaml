@@ -7,6 +7,7 @@ defaults:
   - optional datamodule: dummy
   - model: dummy
   - sap_strategy: normal
+  - sap_runner: default
   - speed: null
   - paths: default
   - extras: default
@@ -34,12 +35,4 @@ tags: ["dev"]
 # simply provide checkpoint path to resume training, or provide pth path as pretrained model
 ckpt_path: null
 
-data_dir: ${paths.data_dir}argoverse/Argoverse-1.1/tracking
-ann_file: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
-output_dir: ${paths.output_dir}
-sap_tag: null
-sap_factor: 1.0
-dataset_resize_ratio: 2
 device_id: 0
-visualize: True
-demo_dir: ${paths.demo_dir}

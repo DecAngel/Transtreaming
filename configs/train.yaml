@@ -15,6 +15,7 @@ defaults:
     - tqdm_progress_bar
     - ema
     - lr_monitor
+#    - visualize_feature
   - loggers:
     - tensorboard
   - trainer: gpu

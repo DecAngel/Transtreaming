@@ -1,5 +1,5 @@
 from src.primitives.model import BaseModel
-from src.primitives.sap_strategy import BaseSAPStrategy, SAPClient
+from src.primitives.sap import BaseSAPStrategy, SAPClient
 
 from src.utils.pylogger import RankedLogger
 
@@ -17,6 +17,9 @@ class DynamicStrategy(BaseSAPStrategy):
             client: SAPClient,
     ) -> None:
         buffer = None
+        past_clip_ids = self.past_clip_ids
+        future_clip_ids = self.future_clip_ids
+        prev_id = 0
 
         while True:
             inp = self.recv_fn(client)
@@ -24,17 +27,23 @@ class DynamicStrategy(BaseSAPStrategy):
                 # end of sequence
                 break
 
-            frame_id, delta, image = inp
-
+            current_id = inp['meta']['frame_id'].item()
+            delta = current_id - prev_id
+            prev_id = current_id
             if buffer is not None:
-                self.past_clip_ids[:, :-1] = self.past_clip_ids[:, 1:] - delta
-                self.past_clip_ids.clamp_min_(-9)
-                self.past_clip_ids[:, -1].zero_()
+                past_clip_ids[:, :-1] = past_clip_ids[:, 1:] - delta
+                past_clip_ids.clamp_min_(-9)
+                past_clip_ids[:, -1].zero_()
+                inp['buffer'] = buffer
+
+            inp['past_clip_ids'] = past_clip_ids
+            inp['future_clip_ids'] = future_clip_ids
 
             start_fid = self.time_fn()
-            runtime_remainder = start_fid - frame_id
+            runtime_remainder = start_fid - current_id
             if runtime_remainder > self.threshold:
                 continue
 
-            res, buffer = self.proc_fn(image, self.past_clip_ids, self.future_clip_ids, buffer, model)
+            res = self.proc_fn(model, inp)
+            buffer = res['buffer']
             self.send_fn(res, client)

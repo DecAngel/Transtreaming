@@ -1,138 +1,96 @@
-from typing import Tuple, Optional, Literal
+import functools
+from typing import Tuple, Optional, Literal, List
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float
 from torch import nn
 
 from src.models.layers.network_blocks import BaseConv
-from src.primitives.batch import PYRAMID, TIME
+from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
-
-
-class SimNeck2(BaseNeck):
-    input_frames: int = 2
-    output_frames: int = 1
-
-    def __init__(
-            self,
-            in_channels: Tuple[int, ...],
-            sim_stride: int = 1,
-            sim_radius: int = 4,
-    ):
-        """High-level-feature-similarity based temporal fusion and forecasting
-
-        :param in_channels: The channels of FPN features.
-        """
-        super().__init__()
-        self.in_channels = in_channels
-        self.sim_stride = sim_stride
-        self.sim_radius = sim_radius
-
-        self.convs = nn.ModuleList([
-            BaseConv(c, c, ksize=1, stride=1)
-            for c in in_channels
-        ])
-
-        sim_channels = (2 * self.sim_radius + 1) ** 2
-        self.sim_mlp = nn.Linear(sim_channels, 1, bias=False)
-
-        def init_yolo(M):
-            for m in M.modules():
-                if isinstance(m, torch.nn.BatchNorm2d):
-                    m.eps = 1e-3
-                    m.momentum = 0.03
-        self.apply(init_yolo)
-
-    def get_sim(
-            self,
-            feature1: Float[torch.Tensor, '*batch_time channels height width'],
-            feature2: Float[torch.Tensor, '*batch_time channels height width'],
-    ):
-        B, T, C, H, W = feature1.shape
-        f1 = feature1.flatten(0, 2).unsqueeze(0)    # 1, B*T*C
-        f2 = feature2.flatten(0, 2).unsqueeze(1)    # B*T*C, 1
-
-        # 1, B*T*C, 2*radius+1, 2*radius+1
-        sim = F.conv2d(f1, f2, bias=None, stride=self.sim_stride, padding=self.sim_radius * self.sim_stride, groups=B * T * C)
-
-        return sim.reshape(B, T, C, 2 * self.sim_radius + 1, 2 * self.sim_radius + 1)
-
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
-        B, TP, _, _, _ = features[0].size()
-        _, TF = future_clip_ids.size()
-
-        proj_features = [conv(f.flatten(0, 1)).unflatten(0, (B, TP)) for conv, f in zip(self.convs, features)]
-
-        # calculate the similarity of highest features along dimension T
-        # B, TP-1
-        sim_past_clip_ids = past_clip_ids[..., 1:] - past_clip_ids[..., :-1]
-        # B, TP-1, C, 2R+1, 2R+1
-        sim_features = [
-            self.get_sim(f[:, 1:], f[:, :-1])
-            for f in proj_features
-        ]
-        # B, TP-1, C, (2R+1)^2
-        sim_features = [
-            F.softmax(sf.flatten(3, 4), dim=-1)
-            for sf in sim_features
-        ]
-
-        # need assertion to pass
-        assert TP == 2 and TF == 1
-        # B, 1, C
-        sim_features = [
-            self.sim_mlp(sf).squeeze(-1) * future_clip_ids.unsqueeze(-1) / sim_past_clip_ids.unsqueeze(-1)
-            for sf in sim_features
-        ]
-
-        # B, 1, C, H, W
-        diff_features = [
-            f[:, -1:] - f[:, :-1]
-            for f in proj_features
-        ]
-
-        # B, 1, C, H, W
-        outputs = [
-            f[:, -1:] + sf.unsqueeze(-1).unsqueeze(-1) + df
-            for f, sf, df in zip(features, sim_features, diff_features)
-        ]
-        return tuple(outputs)
+from src.models.layers.sim_parts import Sim, Sim2, Sim3, Diff, Diff2, LS, Corr, Corr2, Enhance
+from src.utils.time_recorder import TimeRecorder
 
 
 class SimNeck(BaseNeck):
+    state_dict_replace = [
+        ('long_backbone.group_0_jian2', 'neck.ls_long_convs.0'),
+        ('long_backbone.group_0_jian1', 'neck.ls_long_convs.1'),
+        ('long_backbone.group_0_jian0', 'neck.ls_long_convs.2'),
+        ('long_backbone.group_1_jian2', 'neck.ls_long_convs_r.0'),
+        ('long_backbone.group_1_jian1', 'neck.ls_long_convs_r.1'),
+        ('long_backbone.group_1_jian0', 'neck.ls_long_convs_r.2'),
+        ('short_backbone.group_0_jian2', 'neck.ls_short_convs.0'),
+        ('short_backbone.group_0_jian1', 'neck.ls_short_convs.1'),
+        ('short_backbone.group_0_jian0', 'neck.ls_short_convs.2'),
+        ('jian2', 'neck.ls_long_2_convs.0'),
+        ('jian1', 'neck.ls_long_2_convs.1'),
+        ('jian0', 'neck.ls_long_2_convs.2'),
+    ]
     input_frames: int = 4
     output_frames: int = 1
 
     def __init__(
             self,
             in_channels: Tuple[int, ...],
-            use_sim: bool = True,
+            in_strides: Tuple[int, ...],
             sim_stride: int = 1,
             sim_radius: int = 4,
-            use_diff: bool = True,
+            sim_hidden: int = 4,
+            corr_kernel: int = 4,
+            corr_patch: int = 4,
+            ls_remap: bool = False,
+            ls_residue: bool = False,
+            use_sim: bool = False,
+            use_sim2: bool = False,
+            use_sim3: bool = False,
+            use_diff: bool = False,
+            use_diff2: bool = False,
+            use_ls: bool = False,
+            use_corr: bool = False,
+            use_corr2: bool = False,
+            use_enhance: bool = False,
+            record: bool = False,
     ):
         """High-level-feature-similarity based temporal fusion and forecasting
 
         :param in_channels: The channels of FPN features.
         """
         super().__init__()
-        self.in_channels = in_channels
-        self.sim_stride = sim_stride
-        self.sim_radius = sim_radius
+        self.parts = []
+        if use_sim:
+            self.sim = Sim(in_channels, in_strides, sim_stride, sim_radius)
+            self.parts.append(self.sim)
+        if use_sim2:
+            self.sim2 = Sim2(in_channels, in_strides, sim_stride, sim_radius, sim_hidden)
+            self.parts.append(self.sim2)
+        if use_sim3:
+            self.sim3 = Sim3(in_channels, in_strides, sim_stride, sim_radius)
+            self.parts.append(self.sim3)
+        if use_diff:
+            self.diff = Diff(in_channels)
+            self.parts.append(self.diff)
+        if use_diff2:
+            self.diff2 = Diff2(in_channels)
+            self.parts.append(self.diff2)
+        if use_ls:
+            self.ls = LS(in_channels, ls_remap, ls_residue)
+            self.parts.append(self.ls)
+        if use_corr:
+            self.corr = Corr(in_channels, in_strides, corr_kernel, corr_patch)
+            self.parts.append(self.corr)
+        if use_corr2:
+            self.corr2 = Corr2(in_channels, in_strides, corr_kernel, corr_patch)
+            self.parts.append(self.corr2)
+        if use_enhance:
+            self.enhance = Enhance(in_channels)
+            self.parts.append(self.enhance)
 
-        self.convs = nn.ModuleList([
-            BaseConv(c, c, ksize=1, stride=1)
-            for c in in_channels
-        ])
-
-        # sim_channels = (2 * self.sim_radius + 1) ** 2
-        # self.sim_mlp = nn.Linear(sim_channels, 1, bias=False)
+        self.record = record
+        self.tr: Optional[TimeRecorder] = None
+        self.tr_count = 0
 
         def init_yolo(M):
             for m in M.modules():
@@ -141,115 +99,33 @@ class SimNeck(BaseNeck):
                     m.momentum = 0.03
         self.apply(init_yolo)
 
-    def get_diff(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_p']
+        past_clip_ids = batch['past_clip_ids'].float()
+        future_clip_ids = batch['future_clip_ids'].float()
         B, TP = past_clip_ids.size()
         _, TF = future_clip_ids.size()
-        assert TF == 1
 
-        diff = [
-            torch.sum((f[:, -1:] - f[:, :-1]) / -past_clip_ids[:, :-1], dim=1, keepdim=True)
-            for f in features
-        ]
-        return tuple(diff)
+        # B, TF, C, H, W
+        outputs = [f[:, -1:].expand(-1, TF, -1, -1, -1) for f in features]
+        for part in self.parts:
+            if self.record and self.training:
+                if self.tr is None:
+                    self.tr = TimeRecorder('SimNeck', 'avg')
+                self.tr.record()
+            outputs = [
+                f + df
+                for f, df in zip(
+                    outputs,
+                    part(features, past_clip_ids, future_clip_ids)
+                )
+            ]
+            if self.record and self.training:
+                self.tr.record(part.__class__.__name__)
+        if self.record and self.training:
+            self.tr_count += 1
+            if self.tr_count % 100 == 0:
+                self.tr.print()
 
-    def get_sim(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ):
-        B, TP = past_clip_ids.size()
-        _, TF = future_clip_ids.size()
-        assert TF == 1
-
-        for f in features:
-            B, T, C, H, W = f.shape
-
-            # 1, B*T-1*C, H, W
-            f1 = f[:, -1:].expand(B, T-1, C, H, W).flatten(0, 2).unsqueeze(0)
-            # B*T-1*C, 1, H, W
-            f2 = f[:, :-1].flatten(0, 2).unsqueeze(1)
-            # 1, B*T-1*C, 2*radius+1, 2*radius+1
-            sim = F.conv2d(f1, f2, bias=None, stride=self.sim_stride, padding=self.sim_radius * self.sim_stride, groups=B * T * C)
-            # B, T-1, C, (2*radius+1)**2
-            sim.reshape(B, T, C, (2 * self.sim_radius + 1) ** 2)
-            sim = F.softmax(sim, dim=-1)
-            #
-            self.sim_mlp(sim).squeeze(-1) * future_clip_ids.unsqueeze(-1) / sim_past_clip_ids.unsqueeze(-1)
-
-    def get_sim(
-            self,
-            feature1: Float[torch.Tensor, '*batch_time channels height width'],
-            feature2: Float[torch.Tensor, '*batch_time channels height width'],
-            sim_stride: int = 1,
-            sim_radius: int = 4,
-    ):
-        B, T, C, H, W = feature1.shape
-        f1 = feature1.flatten(0, 2).unsqueeze(0)    # 1, B*T*C
-        f2 = feature2.flatten(0, 2).unsqueeze(1)    # B*T*C, 1
-
-        # 1, B*T*C, 2*radius+1, 2*radius+1
-        sim = F.conv2d(f1, f2, bias=None, stride=sim_stride, padding=sim_radius * sim_stride, groups=B * T * C)
-
-        return sim.reshape(B, T, C, 2 * sim_radius + 1, 2 * sim_radius + 1)
-
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
-        B, TP, _, _, _ = features[0].size()
-        _, TF = future_clip_ids.size()
-
-        proj_features = [conv(f.flatten(0, 1)).unflatten(0, (B, TP)) for conv, f in zip(self.convs, features)]
-
-        """
-        # calculate the similarity of highest features along dimension T
-        # B, TP-1
-        sim_past_clip_ids = past_clip_ids[..., 1:] - past_clip_ids[..., :-1]
-        # B, TP-1, C, 2R+1, 2R+1
-        sim_features = [
-            self.get_sim(f[:, 1:], f[:, :-1])
-            for f in proj_features
-        ]
-        # B, TP-1, C, (2R+1)^2
-        sim_features = [
-            F.softmax(sf.flatten(3, 4), dim=-1)
-            for sf in sim_features
-        ]
-
-        # need assertion to pass
-        assert TP == 2 and TF == 1
-        # B, 1, C
-        sim_features = [
-            self.sim_mlp(sf).squeeze(-1) * future_clip_ids.unsqueeze(-1) / sim_past_clip_ids.unsqueeze(-1)
-            for sf in sim_features
-        ]
-        """
-
-        # B, 1, C, H, W
-        diff_features = [
-            f[:, -1:] - f[:, :-1]
-            for f in proj_features
-        ]
-
-        """
-        # B, 1, C, H, W
-        outputs = [
-            f[:, -1:] + sf.unsqueeze(-1).unsqueeze(-1) + df
-            for f, sf, df in zip(features, sim_features, diff_features)
-        ]
-        """
-        # B, 1, C, H, W
-        outputs = [
-            f[:, -1:] + df
-            for f, df in zip(features, diff_features)
-        ]
-        return tuple(outputs)
-
+        batch['intermediate']['features_f'] = tuple(outputs)
+        return batch

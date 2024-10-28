@@ -8,7 +8,7 @@ import torch
 
 from src.models.layers.giraffe_fpn_btn import GiraffeNeckV2
 from src.models.layers.darknet import CSPDarknet
-from src.primitives.batch import IMAGE, PYRAMID
+from src.primitives.batch import IMAGE, PYRAMID, BatchDict
 from src.primitives.model import BaseBackbone
 
 
@@ -63,10 +63,11 @@ class DRFPNBackbone(BaseBackbone):
                     m.momentum = 0.03
         self.apply(init_yolo)
 
-    def forward(self, image: IMAGE) -> PYRAMID:
+    def forward(self, batch: BatchDict) -> BatchDict:
         """ Extract the FPN feature (p3, p4, p5) of an image tensor of (b, t, 3, h, w)
 
         """
+        image = batch['image']['image']
         B, T, C, H, W = image.size()
         image = image.flatten(0, 1)
 
@@ -74,4 +75,5 @@ class DRFPNBackbone(BaseBackbone):
         feature = list(feature[f_name] for f_name in self.feature_names)
         feature = self.neck(feature)
 
-        return tuple([f.unflatten(0, (B, T)) for f in feature])
+        batch['intermediate']['features_p'] = tuple([f.unflatten(0, (B, T)) for f in feature])
+        return batch

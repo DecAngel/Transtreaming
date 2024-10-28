@@ -166,15 +166,12 @@ class TALHead(BaseHead):
             b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
             conv.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-            gt_coordinates: Optional[COORDINATE] = None,
-            gt_labels: Optional[LABEL] = None,
-            shape: Optional[SIZE] = None,
-    ) -> Union[BBoxDict, LossDict]:
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_f']
+        gt_coordinates = batch['bbox']['coordinate'] if 'bbox' in batch else None
+        gt_labels = batch['bbox']['label'] if 'bbox' in batch else None
+        shape = tuple(batch['meta']['current_size'][0].cpu().tolist())
+
         if self.training:
             # B, T, _, _, _ = features[0].size()
             features = [f.flatten(0, 1) for f in features]
@@ -194,7 +191,15 @@ class TALHead(BaseHead):
                     ], dim=-1),
                 ),
             )
-            return {'loss': loss}
+            batch['loss'] = {
+                'loss': loss,
+                'iou_loss': iou_loss,
+                'conf_loss': conf_loss,
+                'cls_loss': cls_loss,
+                'l1_loss': l1_loss,
+                'loss_num_fg': num_fg,
+            }
+            return batch
         else:
             B, T, _, _, _ = features[0].size()
             features = [f.flatten(0, 1) for f in features]
@@ -206,14 +211,14 @@ class TALHead(BaseHead):
             pred_labels = pred[..., 6]
             if shape is not None:
                 # prevent inf
-                shape = shape[0].cpu().tolist()
                 pred_coordinates[..., [0, 2]] = pred_coordinates[..., [0, 2]].clamp(min=0, max=shape[1])
                 pred_coordinates[..., [1, 3]] = pred_coordinates[..., [1, 3]].clamp(min=0, max=shape[0])
-            return {
+            batch['bbox_pred'] = {
                 'coordinate': pred_coordinates.unflatten(0, (B, T)).detach().float(),
                 'label': pred_labels.unflatten(0, (B, T)).detach().long(),
                 'probability': pred_probabilities.unflatten(0, (B, T)).detach().float(),
             }
+            return batch
 
     def forward_impl(self, xin, labels=None, imgs=None):
         outputs = []

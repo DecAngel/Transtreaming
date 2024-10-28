@@ -1,0 +1,12 @@
+_target_: src.primitives.sap.SAPRunner
+data_dir: ${paths.data_dir}argoverse/Argoverse-1.1/tracking
+ann_file: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
+output_dir: ${paths.output_dir}
+demo_dir: ${paths.demo_dir}
+
+sap_tag: null
+sap_factor: 1.0
+dataset_resize_ratio: 2
+
+visualize: True
+vis_max_frame: 50

@@ -6,7 +6,7 @@ import torch
 
 from src.primitives.batch import PYRAMID
 from src.primitives.model import BaseModel
-from src.primitives.sap_strategy import BaseSAPStrategy, SAPClient
+from src.primitives.sap import BaseSAPStrategy, SAPClient
 
 from src.utils.pylogger import RankedLogger
 
@@ -19,6 +19,7 @@ def break_pyramid(pyramid: PYRAMID) -> List[PYRAMID]:
     return [tuple(p[:, i:i+1] for p in pyramid) for i in range(t)]
 
 
+#TODO: change
 class AdaptiveStrategy(BaseSAPStrategy):
     def __init__(
             self,

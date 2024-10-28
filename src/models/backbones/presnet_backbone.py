@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from collections import OrderedDict
 
 from src.models.layers.presnet import ResNet_cfg, donwload_url, ConvNormLayer, BasicBlock, BottleNeck, Blocks
-from src.primitives.batch import IMAGE, PYRAMID
+from src.primitives.batch import IMAGE, PYRAMID, BatchDict
 from src.utils.detr_utils import FrozenBatchNorm2d
 from src.primitives.model import BaseBackbone
 
@@ -87,7 +87,12 @@ class PResNetBackbone(BaseBackbone):
                     setattr(m, name, _child)
         return m
 
-    def forward(self, image: IMAGE) -> PYRAMID:
+    def forward(self, batch: BatchDict) -> BatchDict:
+        """ Extract the FPN feature (p3, p4, p5) of an image tensor of (b, t, 3, h, w)
+
+        """
+        image = batch['image']['image']
+
         B, T, C, H, W = image.shape
         x = image.flatten(0, 1) / 255.
         conv1 = self.conv1(x)
@@ -97,4 +102,5 @@ class PResNetBackbone(BaseBackbone):
             x = stage(x)
             if idx in self.return_idx:
                 outs.append(x.unflatten(0, (B, T)))
-        return tuple(outs)
+        batch['intermediate']['features_p'] = tuple(outs)
+        return batch

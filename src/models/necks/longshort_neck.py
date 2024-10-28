@@ -70,14 +70,10 @@ class LongShortNeck(BaseNeck):
                     m.momentum = 0.03
         self.apply(init_yolo)
 
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
-        B, TP, _, _, _ = features[0].size()
-        _, TF = future_clip_ids.size()
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_p']
+        B, TP = batch['past_clip_ids'].size()
+        _, TF = batch['future_clip_ids'].size()
 
         assert TP == 4
         outputs = []
@@ -95,4 +91,5 @@ class LongShortNeck(BaseNeck):
                 long = self.long_2_convs[i](long)
             outputs.append((torch.cat([short, long], dim=1) + f[:, -1]).unsqueeze(1))
 
-        return tuple(outputs)
+        batch['intermediate']['features_f'] = tuple(outputs)
+        return batch

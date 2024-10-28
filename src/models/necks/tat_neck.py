@@ -7,7 +7,7 @@ import torch.nn as nn
 from jaxtyping import Float
 import torch.nn.functional as F
 
-from src.primitives.batch import PYRAMID, TIME
+from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 
 
@@ -313,13 +313,11 @@ class TATNeck(BaseNeck):
                     m.momentum = 0.03
         self.apply(init_yolo)
 
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
-        B, TP, _, _, _ = features[0].size()
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_p']
+        past_clip_ids = batch['past_clip_ids'].float()
+        future_clip_ids = batch['future_clip_ids'].float()
+        B, TP = past_clip_ids.size()
         _, TF = future_clip_ids.size()
 
         position = self.rpe(past_clip_ids[:, :-1], future_clip_ids)
@@ -330,4 +328,5 @@ class TATNeck(BaseNeck):
         for layer in self.layers:
             features_f = layer(features_p, features_f, position)
 
-        return tuple(f.permute(0, 1, 4, 2, 3) for f in features_f)
+        batch['intermediate']['features_f'] = tuple(f.permute(0, 1, 4, 2, 3) for f in features_f)
+        return batch

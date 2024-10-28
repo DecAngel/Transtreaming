@@ -10,11 +10,9 @@ from PIL import Image
 from kornia.geometry import resize
 from matplotlib import pyplot as plt
 from pycocotools.coco import COCO
-from torchvision.transforms import PILToTensor
-from torchvision.transforms.v2 import ToTensor
 from tqdm import tqdm
 
-from src.primitives.batch import IMAGE, BBoxDict, PYRAMID, TIME, SIZE
+from src.primitives.batch import IMAGE, BBoxDict, PYRAMID, TIME, SIZE, BatchDict
 from src.primitives.model import BaseModel
 from src.utils.array_operations import remove_pad_along
 from src.utils.pylogger import RankedLogger
@@ -34,6 +32,7 @@ from typing import Optional, Tuple, Dict, Any
 import torch
 from sap_toolkit.client import EvalClient
 from sap_toolkit.generated import eval_server_pb2
+
 
 coco_eval_metric_names = [
     ('Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = ', 'AP5095'),
@@ -199,7 +198,7 @@ class BaseSAPStrategy:
         self._proc_time = []
         self._send_time = []
 
-    def transform_fn(self, frame: np.ndarray):
+    def transform_fn(self, frame: np.ndarray) -> IMAGE:
         frame = torch.from_numpy(frame).permute(2, 0, 1)[None, [2, 1, 0]]
         frame = frame.to(dtype=torch.float16, device=self._device)
         return resize(
@@ -210,87 +209,77 @@ class BaseSAPStrategy:
     def time_fn(self):
         return (time.perf_counter() - self._start_time) * 30 * self._sap_factor
 
-    def recv_fn(self, client: SAPClient) -> Optional[Tuple[int, int, IMAGE]]:
+    def recv_fn(self, client: SAPClient) -> Optional[BatchDict]:
         # initial
-        res = None
+        batch: Optional[BatchDict] = None
         while True:
-            next_frame_id, frame = client.get_frame()
+            current_frame_id, frame = client.get_frame()
 
-            if next_frame_id is not None:
+            if current_frame_id is not None:
                 if self._prev_frame_id is None:
-                    frame_id_delta = next_frame_id
-                    self._prev_frame_id = next_frame_id
-                elif next_frame_id != self._prev_frame_id:
-                    frame_id_delta = next_frame_id - self._prev_frame_id
-                    self._prev_frame_id = next_frame_id
+                    frame_id_delta = current_frame_id
+                    self._prev_frame_id = current_frame_id
+                elif current_frame_id != self._prev_frame_id:
+                    frame_id_delta = current_frame_id - self._prev_frame_id
+                    self._prev_frame_id = current_frame_id
                 else:
                     continue
 
                 t1 = self.time_fn()
-                frame = self.transform_fn(frame)
-                res = next_frame_id, frame_id_delta, frame
+                batch = {
+                    'meta': {
+                        'image_id': torch.tensor([current_frame_id], dtype=torch.long, device=self._device),
+                        'seq_id': torch.tensor([0], dtype=torch.long, device=self._device),
+                        'frame_id': torch.tensor([current_frame_id], dtype=torch.long, device=self._device),
+                        'current_size': torch.tensor(frame.shape[:2], dtype=torch.long, device=self._device),
+                        'original_size': torch.tensor([frame.shape[0] // self._resize_ratio, frame.shape[1] // self._resize_ratio], dtype=torch.long, device=self._device)
+                    },
+                    'image': {'image': self.transform_fn(frame)},
+                    'image_clip_ids': torch.tensor([[0]], dtype=torch.long, device=self._device),
+                }
                 t2 = self.time_fn()
                 self._recv_time.append((t1, t2 - t1))
                 break
             else:
                 break
 
-        return res
+        return batch
 
     def proc_fn(
             self,
-            image: IMAGE,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-            buffer: Optional[PYRAMID],
             model: BaseModel,
-    ) -> Tuple[BBoxDict, PYRAMID]:
+            batch: BatchDict,
+    ) -> BatchDict:
         t1 = self.time_fn()
-        res = model.inference(
-            image=image,
-            past_clip_ids=past_clip_ids,
-            future_clip_ids=future_clip_ids,
-            buffer=buffer,
-        )
+        batch = model.inference(batch)
         t2 = self.time_fn()
         self._proc_time.append((t1, t2 - t1))
-        return res
+        return batch
 
     def proc_backbone_neck_fn(
             self,
-            image: IMAGE,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-            buffer: Optional[PYRAMID],
             model: BaseModel,
-    ) -> Tuple[PYRAMID, PYRAMID]:
+            batch: BatchDict,
+    ) -> BatchDict:
         t1 = self.time_fn()
-        res = model.inference_backbone_neck(
-            image=image,
-            past_clip_ids=past_clip_ids,
-            future_clip_ids=future_clip_ids,
-            buffer=buffer,
-        )
+        batch = model.inference_backbone_neck(batch)
         t2 = self.time_fn()
         self._proc_time.append((t1, t2 - t1))
-        return res
+        return batch
 
     def proc_head_fn(
             self,
-            features_f: PYRAMID,
-            shape: Optional[SIZE],
             model: BaseModel,
-    ) -> BBoxDict:
+            batch: BatchDict,
+    ) -> BatchDict:
         t1 = self.time_fn()
-        res = model.inference_head(
-            features_f=features_f,
-            shape=shape
-        )
+        batch = model.inference_head(batch)
         t2 = self.time_fn()
         self._proc_time[-1] = self._proc_time[-1][0], self._proc_time[-1][1] + t2 - t1
-        return res
+        return batch
 
-    def send_fn(self, bbox: BBoxDict, client: SAPClient, delay: float = 0.0) -> None:
+    def send_fn(self, batch: BatchDict, client: SAPClient, delay: float = 0.0) -> None:
+        bbox: BBoxDict = batch['bbox_pred']
         t1 = self.time_fn()
         coordinate = remove_pad_along(
             bbox['coordinate'][0, 0].cpu().numpy(),
@@ -330,10 +319,24 @@ class BaseSAPStrategy:
         self._proc_time.clear()
         self._send_time.clear()
 
-        buffer = None
-        for frame in demo_input:
-            frame = self.transform_fn(frame)
-            _, buffer = model.inference(frame, self.past_clip_ids, self.future_clip_ids, buffer)
+        batch = {}
+        for i, frame in enumerate(demo_input):
+            batch.update({
+                'meta': {
+                    'image_id': torch.tensor([i], dtype=torch.long, device=self._device),
+                    'seq_id': torch.tensor([0], dtype=torch.long, device=self._device),
+                    'frame_id': torch.tensor([i], dtype=torch.long, device=self._device),
+                    'current_size': torch.tensor(frame.shape[:2], dtype=torch.long, device=self._device),
+                    'original_size': torch.tensor(
+                        [frame.shape[0] // self._resize_ratio, frame.shape[1] // self._resize_ratio], dtype=torch.long,
+                        device=self._device)
+                },
+                'image': {'image': self.transform_fn(frame)},
+                'image_clip_ids': torch.tensor([[0]], dtype=torch.long, device=self._device),
+                'past_clip_ids': self.past_clip_ids,
+                'future_clip_ids': self.future_clip_ids,
+            })
+            batch = model.inference(batch)
 
     def infer_step(
             self,
@@ -346,9 +349,6 @@ class BaseSAPStrategy:
 class SAPRunner:
     def __init__(
             self,
-            model: BaseModel,
-            strategy: BaseSAPStrategy,
-
             data_dir: str,
             ann_file: str,
             output_dir: str,
@@ -361,9 +361,6 @@ class SAPRunner:
             visualize: bool = False,
             vis_max_frame: int = 20,
     ):
-        self.model = model
-        self.strategy = strategy
-
         self.data_dir = data_dir
         self.ann_file = ann_file
         self.output_dir = output_dir
@@ -408,7 +405,7 @@ class SAPRunner:
         else:
             plt.show()
 
-    def run(self) -> Tuple[Dict[str, float], Dict[str, float]]:
+    def run(self, model: BaseModel, strategy: BaseSAPStrategy) -> Tuple[Dict[str, float], Dict[str, float]]:
         all_recv = []
         all_proc = []
         all_send = []
@@ -430,7 +427,7 @@ class SAPRunner:
                 for p in list(Path(self.demo_dir).iterdir())[:3]:
                     demo_input.append(np.asarray(Image.open(p)).copy())
 
-                torch.cuda.synchronize(device=self.model.device)
+                torch.cuda.synchronize(device=model.device)
 
                 with torch.inference_mode():
                     for i, seq_id in enumerate(tqdm(seqs)):
@@ -440,8 +437,8 @@ class SAPRunner:
                         # during server loading images, do initialization
                         # cause error if server loads too fast, but highly impossible
                         # initialize sap
-                        self.strategy.infer_prepare(
-                            model=self.model,
+                        strategy.infer_prepare(
+                            model=model,
                             client=client,
                             sap_factor=self.sap_factor,
                             dataset_resize_ratio=self.dataset_resize_ratio,
@@ -449,7 +446,7 @@ class SAPRunner:
                         )
 
                         client.get_stream_start_time()  # wait
-                        recv_time, proc_time, send_time = self.strategy.infer(self.model, client, time.perf_counter())
+                        recv_time, proc_time, send_time = strategy.infer(model, client, time.perf_counter())
 
                         all_recv.extend([t[1] for t in recv_time])
                         all_proc.extend([t[1] for t in proc_time])

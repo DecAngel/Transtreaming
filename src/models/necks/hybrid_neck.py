@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from jaxtyping import Float
 
 from src.models.layers.hybrid_encoder import TransformerEncoder, TransformerEncoderLayer, ConvNormLayer, CSPRepLayer
-from src.primitives.batch import PYRAMID, TIME
+from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 
 
@@ -143,14 +143,12 @@ class HybridEncoderNeck(BaseNeck):
 
         return diff.reshape(B, T, C, 2*self.diff_radius+1, 2*self.diff_radius+1)
 
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
-        B, TP = past_clip_ids.shape
-        _, TF = future_clip_ids.shape
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_p']
+        past_clip_ids = batch['past_clip_ids']
+        future_clip_ids = batch['future_clip_ids']
+        B, TP = past_clip_ids.size()
+        _, TF = future_clip_ids.size()
 
         base_features = [f[:, -1] for f in features]
         proj_feats = [self.input_proj[i](feat) for i, feat in enumerate(base_features)]
@@ -211,4 +209,5 @@ class HybridEncoderNeck(BaseNeck):
             out = self.pan_blocks[idx](torch.concat([downsample_feat, feat_height], dim=1))
             outs.append(out)
 
-        return tuple(outs)
+        batch['intermediate']['features_f'] = tuple(outs)
+        return batch

@@ -1,7 +1,6 @@
 from lightning import Callback
 import lightning as L
 
-import sap_toolkit.server
 from src.primitives.batch import BatchDict, LossDict
 from src.primitives.model import BaseModel
 from src.utils.pylogger import RankedLogger

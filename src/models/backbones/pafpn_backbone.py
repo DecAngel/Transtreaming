@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 from src.models.layers.darknet import CSPDarknet
 from src.models.layers.network_blocks import DWConv, BaseConv, CSPLayer
-from src.primitives.batch import IMAGE, PYRAMID
+from src.primitives.batch import IMAGE, PYRAMID, BatchDict
 from src.primitives.model import BaseBackbone
 
 
@@ -94,10 +94,11 @@ class PAFPNBackbone(BaseBackbone):
                     m.momentum = 0.03
         self.apply(init_yolo)
 
-    def forward(self, image: IMAGE) -> PYRAMID:
+    def forward(self, batch: BatchDict) -> BatchDict:
         """ Extract the FPN feature (p3, p4, p5) of an image tensor of (b, t, 3, h, w)
 
         """
+        image = batch['image']['image']
         B, T, C, H, W = image.size()
         image = image.flatten(0, 1)
 
@@ -128,4 +129,6 @@ class PAFPNBackbone(BaseBackbone):
         x = self.up_csp_4_5(x)
         p5 = x
 
-        return p3.unflatten(0, (B, T)), p4.unflatten(0, (B, T)), p5.unflatten(0, (B, T))
+        batch['intermediate']['features_p'] = p3.unflatten(0, (B, T)), p4.unflatten(0, (B, T)), p5.unflatten(0, (B, T))
+
+        return batch

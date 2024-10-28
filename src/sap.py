@@ -1,18 +1,8 @@
-import contextlib
-import io
-import pickle
-import time
-from typing import Any, Dict, List, Optional, Tuple
-
 import hydra
 import rootutils
 import torch
 import torch.multiprocessing as mp
-from kornia.geometry import resize
-from matplotlib import pyplot as plt
 from omegaconf import DictConfig
-from pycocotools.coco import COCO
-from tqdm import tqdm
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -49,12 +39,12 @@ log = RankedLogger(__name__, rank_zero_only=True)
 import json
 import platform
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import  Tuple, Dict
 
 import torch
 
 from src.primitives.model import BaseModel
-from src.primitives.sap_strategy import BaseSAPStrategy, SAPServer, SAPClient, SAPRunner
+from src.primitives.sap import BaseSAPStrategy, SAPRunner
 
 
 @task_wrapper
@@ -68,6 +58,11 @@ def sap(cfg: DictConfig) -> Tuple[Dict[str, float], Dict[str, float]]:
     log.info(f"Instantiating sap_strategy <{cfg.sap_strategy._target_}>")
     strategy: BaseSAPStrategy = hydra.utils.instantiate(cfg.sap_strategy)
 
+    log.info(f"Instantiating sap_runner <{cfg.sap_runner._target_}>")
+    runner: SAPRunner = hydra.utils.instantiate(cfg.sap_runner)
+
+    device_id = cfg.get('device_id', 0)
+
     # load ckpt or pth
     path = Path(cfg.ckpt_path).resolve()
     log.info(f"Loading model from {str(path)}")
@@ -78,23 +73,9 @@ def sap(cfg: DictConfig) -> Tuple[Dict[str, float], Dict[str, float]]:
     else:
         raise ValueError(f"Unsupported file type {path.suffix}")
 
-    data_dir = cfg.get('data_dir')
-    ann_file = cfg.get('ann_file')
-    output_dir = cfg.get('output_dir')
-    demo_dir = cfg.get('demo_dir')
-
-    sap_tag = cfg.get('sap_tag', None)
-    sap_factor = cfg.get('sap_factor', 1.0)
-    dataset_resize_ratio = cfg.get('dataset_resize_ratio', 2)
-    device_id = cfg.get('device_id', 0)
-    visualize = cfg.get('visualize', False)
-
     model = model.eval().half().to(torch.device(f'cuda:{device_id}'))
 
-    runner = SAPRunner(
-        model, strategy, data_dir, ann_file, output_dir, demo_dir, sap_tag, sap_factor, dataset_resize_ratio, visualize
-    )
-    return runner.run()
+    return runner.run(model, strategy)
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="sap.yaml")

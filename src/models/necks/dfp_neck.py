@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from src.models.layers.network_blocks import BaseConv
-from src.primitives.batch import PYRAMID, TIME
+from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 
 
@@ -34,14 +34,10 @@ class DFPNeck(BaseNeck):
                     m.momentum = 0.03
         self.apply(init_yolo)
 
-    def forward(
-            self,
-            features: PYRAMID,
-            past_clip_ids: TIME,
-            future_clip_ids: TIME,
-    ) -> PYRAMID:
-        B, TP, _, _, _ = features[0].size()
-        _, TF = future_clip_ids.size()
+    def forward(self, batch: BatchDict) -> BatchDict:
+        features = batch['intermediate']['features_p']
+        B, TP = batch['past_clip_ids'].size()
+        _, TF = batch['future_clip_ids'].size()
 
         outputs = []
         for i, conv in enumerate(self.convs):
@@ -49,4 +45,5 @@ class DFPNeck(BaseNeck):
             features_conv = torch.cat([features_conv[:, :1].expand(-1, TP-1, -1, -1, -1), features_conv[:, 1:]], dim=2)
             outputs.append(features[i][:, -1:]+features_conv)
 
-        return tuple(outputs)
+        batch['intermediate']['features_f'] = tuple(outputs)
+        return batch

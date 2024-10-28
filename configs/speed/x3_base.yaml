@@ -1,0 +1,38 @@
+# @package _global_
+datamodule:
+  train_data_source:
+    image_clip_ids: [ -8, -4, -2, -1, 0]
+    bbox_clip_ids: [ 1, 2, 4, 8 ]
+    image_clip_fn:
+      _target_: src.datamodules.clip_functions.sample
+      _partial_: True
+      _convert_: partial
+      steps:
+        - [ 0, 1, 10, -3, -2, -1, 0 ]
+        - [ 0, 0.3, 5, -8, -4, -2, 0 ]
+        - [ 0, 0.5, 5, -6, -3, -1, 0 ]
+        - [ 0, 0.7, 5, -4, -2, -1, 0 ]
+        - [ 0.1, 1, 5, -4, -3, -2, 0 ]
+    bbox_clip_fn:
+      _target_: src.datamodules.clip_functions.sample
+      _partial_: True
+      _convert_: partial
+      steps:
+        - [ 0, 1, 10, 0, 1 ]
+        - [ 0, 0.3, 5, 0, 8 ]
+        - [ 0, 0.5, 5, 0, 4 ]
+        - [ 0, 0.7, 5, 0, 2 ]
+  val_data_source:
+    image_clip_ids: [ -3, -2, -1, 0 ]
+    bbox_clip_ids: [ 1 ]
+  test_data_source:
+    image_clip_ids: [ -3, -2, -1, 0 ]
+    bbox_clip_ids: [ 1 ]
+
+model:
+  metric:
+    future_time_constant: [1]
+
+sap_strategy:
+  past_length: 4
+  future_length: 1

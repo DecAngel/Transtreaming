@@ -1,0 +1,9 @@
+visualize_feature:
+  _target_: src.callbacks.visualize_feature.VisualizeFeature
+  tag: "Transtreaming"
+  mode: "show_plt"
+  visualization_dir: ${paths.output_dir}/visualization/
+  visualize_train: True
+  visualize_val: False
+  visualize_test: False
+  visualize_interval: 3000

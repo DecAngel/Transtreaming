@@ -1,7 +1,7 @@
 import torch
 
 from src.primitives.model import BaseModel
-from src.primitives.sap_strategy import BaseSAPStrategy, SAPClient
+from src.primitives.sap import BaseSAPStrategy, SAPClient
 
 from src.utils.pylogger import RankedLogger
 
@@ -25,10 +25,12 @@ class NoBufStrategy(BaseSAPStrategy):
                 # end of sequence
                 break
 
-            frame_id, delta, image = inp
-            input_buffer.append(image)
-            input_buffer = input_buffer[:self.past_length]
-            image = torch.cat(input_buffer, dim=1)
+            inp['past_clip_ids'] = self.past_clip_ids
+            inp['future_clip_ids'] = self.future_clip_ids
 
-            res, _ = self.proc_fn(image, self.past_clip_ids, self.future_clip_ids, None, model)
+            input_buffer.append(inp['image']['image'])
+            input_buffer = input_buffer[:self.past_length]
+            inp['image']['image'] = torch.cat(input_buffer, dim=1)
+
+            res = self.proc_fn(model, inp)
             self.send_fn(res, client)

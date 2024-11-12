@@ -179,18 +179,19 @@ class TALHead(BaseHead):
             gt_coordinates_2 = gt_coordinates[:, 1:].flatten(0, 1)
             gt_labels_1 = gt_labels[:, :-1].flatten(0, 1)
             gt_labels_2 = gt_labels[:, 1:].flatten(0, 1)
-            loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.forward_impl(
-                features, (
-                    torch.cat([
-                        gt_labels_2.unsqueeze(-1).float(),
-                        xyxy2cxcywh(gt_coordinates_2),
-                    ], dim=-1),
-                    torch.cat([
-                        gt_labels_1.unsqueeze(-1).float(),
-                        xyxy2cxcywh(gt_coordinates_1),
-                    ], dim=-1),
-                ),
-            )
+            with self.record_time('TAL_forward'):
+                loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.forward_impl(
+                    features, (
+                        torch.cat([
+                            gt_labels_2.unsqueeze(-1).float(),
+                            xyxy2cxcywh(gt_coordinates_2),
+                        ], dim=-1),
+                        torch.cat([
+                            gt_labels_1.unsqueeze(-1).float(),
+                            xyxy2cxcywh(gt_coordinates_1),
+                        ], dim=-1),
+                    ),
+                )
             batch['loss'] = {
                 'loss': loss,
                 'iou_loss': iou_loss,
@@ -203,8 +204,10 @@ class TALHead(BaseHead):
         else:
             B, T, _, _, _ = features[0].size()
             features = [f.flatten(0, 1) for f in features]
-            pred = self.forward_impl(features)
-            pred = self.postprocess(pred)
+            with self.record_time('TAL_forward'):
+                pred = self.forward_impl(features)
+            with self.record_time('TAL_postprocess'):
+                pred = self.postprocess(pred)
             pred = torch.stack(list(clip_or_pad_along(p, 0, self.max_objs) for p in pred))
             pred_coordinates = pred[..., :4]
             pred_probabilities = pred[..., 4] * pred[..., 5]

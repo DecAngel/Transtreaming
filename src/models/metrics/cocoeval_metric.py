@@ -102,9 +102,9 @@ class COCOEvalMetric(BaseMetric):
 
     def compute(self) -> MetricDict:
         # gt, outputs
-        if self.trainer.validating:
+        if self._trainer.validating:
             cocoGt = self.get_coco(self.eval_coco)
-        elif self.trainer.testing:
+        elif self._trainer.testing:
             cocoGt = self.get_coco(self.test_coco)
         else:
             raise ValueError('Trainer not in validating or testing mode.')

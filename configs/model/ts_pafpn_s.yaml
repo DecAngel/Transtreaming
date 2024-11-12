@@ -68,3 +68,4 @@ optim:
   weight_decay: 5e-4
   batch_size: ${datamodule.batch_size}
 torch_compile: null
+record_interval: 0

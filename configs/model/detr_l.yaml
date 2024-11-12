@@ -81,3 +81,4 @@ optim:
   gamma: 0.1
 
 torch_compile: null
+record_interval: 0

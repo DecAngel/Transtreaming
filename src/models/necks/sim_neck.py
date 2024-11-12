@@ -1,3 +1,4 @@
+import contextlib
 import functools
 from typing import Tuple, Optional, Literal, List
 
@@ -11,7 +12,6 @@ from src.models.layers.network_blocks import BaseConv
 from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 from src.models.layers.sim_parts import Sim, Sim2, Sim3, Diff, Diff2, LS, Corr, Corr2, Enhance
-from src.utils.time_recorder import TimeRecorder
 
 
 class SimNeck(BaseNeck):
@@ -52,7 +52,6 @@ class SimNeck(BaseNeck):
             use_corr: bool = False,
             use_corr2: bool = False,
             use_enhance: bool = False,
-            record: bool = False,
     ):
         """High-level-feature-similarity based temporal fusion and forecasting
 
@@ -88,10 +87,6 @@ class SimNeck(BaseNeck):
             self.enhance = Enhance(in_channels)
             self.parts.append(self.enhance)
 
-        self.record = record
-        self.tr: Optional[TimeRecorder] = None
-        self.tr_count = 0
-
         def init_yolo(M):
             for m in M.modules():
                 if isinstance(m, torch.nn.BatchNorm2d):
@@ -101,31 +96,22 @@ class SimNeck(BaseNeck):
 
     def forward(self, batch: BatchDict) -> BatchDict:
         features = batch['intermediate']['features_p']
-        past_clip_ids = batch['past_clip_ids'].float()
-        future_clip_ids = batch['future_clip_ids'].float()
+        past_clip_ids = batch['past_clip_ids'].half()
+        future_clip_ids = batch['future_clip_ids'].half()
         B, TP = past_clip_ids.size()
         _, TF = future_clip_ids.size()
 
         # B, TF, C, H, W
         outputs = [f[:, -1:].expand(-1, TF, -1, -1, -1) for f in features]
         for part in self.parts:
-            if self.record and self.training:
-                if self.tr is None:
-                    self.tr = TimeRecorder('SimNeck', 'avg')
-                self.tr.record()
-            outputs = [
-                f + df
-                for f, df in zip(
-                    outputs,
-                    part(features, past_clip_ids, future_clip_ids)
-                )
-            ]
-            if self.record and self.training:
-                self.tr.record(part.__class__.__name__)
-        if self.record and self.training:
-            self.tr_count += 1
-            if self.tr_count % 100 == 0:
-                self.tr.print()
+            with self.record_time(f'neck_{part.__class__.__name__}'):
+                outputs = [
+                    f + df
+                    for f, df in zip(
+                        outputs,
+                        part(features, past_clip_ids, future_clip_ids)
+                    )
+                ]
 
         batch['intermediate']['features_f'] = tuple(outputs)
         return batch

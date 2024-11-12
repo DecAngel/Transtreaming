@@ -40,10 +40,10 @@ class ModelEmaV2(nn.Module):
     def __init__(self, model: BaseModel, decay=0.9999):
         super(ModelEmaV2, self).__init__()
         # make a copy of the model for accumulating moving average of weights
-        trainer = model.backbone.trainer
-        model.backbone.trainer = model.neck.trainer = model.head.trainer = None
+        trainer = model.backbone._trainer
+        model.backbone._trainer = model.neck._trainer = model.head._trainer = None
         self.module = model.__class__(copy.deepcopy(model.backbone), copy.deepcopy(model.neck), copy.deepcopy(model.head))
-        model.backbone.trainer = model.neck.trainer = model.head.trainer = trainer
+        model.backbone._trainer = model.neck._trainer = model.head._trainer = trainer
         self.module.load_state_dict(model.state_dict())
         self.module.eval()
         self.decay = decay

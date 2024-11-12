@@ -145,12 +145,6 @@ class BaseDataModule(L.LightningDataModule):
                 self.data_space[self.TEST_NAMESPACE] = self.test_data_source.__getstate__()
 
     def setup(self, stage: str) -> None:
-        if isinstance(self.train_data_source, BlockMixin):
-            self.train_data_source.trainer = self.trainer
-        if isinstance(self.val_data_source, BlockMixin):
-            self.val_data_source.trainer = self.trainer
-        if isinstance(self.test_data_source, BlockMixin):
-            self.test_data_source.trainer = self.trainer
         if self.data_space is not None:
             # post init
             if stage == 'fit':

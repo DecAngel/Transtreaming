@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from src.models.layers.network_blocks import BaseConv
-from src.primitives.batch import PYRAMID, TIME
+from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 
 
@@ -77,19 +77,20 @@ class LongShortNeck(BaseNeck):
 
         assert TP == 4
         outputs = []
-        for i, f in enumerate(features):
-            l3, l2, l1, short = f.unbind(1)
-            short = self.short_convs[i](short)
-            l1 = self.long_convs[i](l1)
-            l2 = self.long_convs[i](l2)
-            if self.residue:
-                l3 = self.long_convs_r[i](l3)
-            else:
-                l3 = self.long_convs[i](l3)
-            long = torch.cat([l1, l2, l3], dim=1)
-            if self.remap:
-                long = self.long_2_convs[i](long)
-            outputs.append((torch.cat([short, long], dim=1) + f[:, -1]).unsqueeze(1))
+        with self.record_time('neck'):
+            for i, f in enumerate(features):
+                l3, l2, l1, short = f.unbind(1)
+                short = self.short_convs[i](short)
+                l1 = self.long_convs[i](l1)
+                l2 = self.long_convs[i](l2)
+                if self.residue:
+                    l3 = self.long_convs_r[i](l3)
+                else:
+                    l3 = self.long_convs[i](l3)
+                long = torch.cat([l1, l2, l3], dim=1)
+                if self.remap:
+                    long = self.long_2_convs[i](long)
+                outputs.append((torch.cat([short, long], dim=1) + f[:, -1]).unsqueeze(1))
 
         batch['intermediate']['features_f'] = tuple(outputs)
         return batch

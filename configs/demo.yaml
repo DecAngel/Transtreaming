@@ -1,0 +1,35 @@
+# @package _global_
+
+# specify here default configuration
+# order of defaults determines the order in which configs override each other
+defaults:
+  - _self_
+  - optional datamodule: dummy
+  - model: dummy
+  - optional sap_strategy: null
+  - speed: null
+  - paths: default
+  - extras: default
+  - hydra: default
+
+  # optional local config for machine/user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: default
+
+# task name, determines output directory path
+task_name: "demo"
+
+# tags to help you identify your experiments
+# you can overwrite this in experiment configs
+# overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
+tags: ["demo"]
+
+# simply provide checkpoint path to resume training, or provide pth path as pretrained model
+ckpt_path: null
+demo_dir: ${paths.demo_dir}
+device_id: 0
+fps: 30
+
+model:
+  head:
+    conf_thre: 0.5

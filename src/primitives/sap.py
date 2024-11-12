@@ -231,8 +231,8 @@ class BaseSAPStrategy:
                         'image_id': torch.tensor([current_frame_id], dtype=torch.long, device=self._device),
                         'seq_id': torch.tensor([0], dtype=torch.long, device=self._device),
                         'frame_id': torch.tensor([current_frame_id], dtype=torch.long, device=self._device),
-                        'current_size': torch.tensor(frame.shape[:2], dtype=torch.long, device=self._device),
-                        'original_size': torch.tensor([frame.shape[0] // self._resize_ratio, frame.shape[1] // self._resize_ratio], dtype=torch.long, device=self._device)
+                        'current_size': torch.tensor([[frame.shape[0] // self._resize_ratio, frame.shape[1] // self._resize_ratio]], dtype=torch.long, device=self._device),
+                        'original_size': torch.tensor([frame.shape[:2]], dtype=torch.long, device=self._device)
                     },
                     'image': {'image': self.transform_fn(frame)},
                     'image_clip_ids': torch.tensor([[0]], dtype=torch.long, device=self._device),
@@ -326,10 +326,10 @@ class BaseSAPStrategy:
                     'image_id': torch.tensor([i], dtype=torch.long, device=self._device),
                     'seq_id': torch.tensor([0], dtype=torch.long, device=self._device),
                     'frame_id': torch.tensor([i], dtype=torch.long, device=self._device),
-                    'current_size': torch.tensor(frame.shape[:2], dtype=torch.long, device=self._device),
-                    'original_size': torch.tensor(
-                        [frame.shape[0] // self._resize_ratio, frame.shape[1] // self._resize_ratio], dtype=torch.long,
-                        device=self._device)
+                    'current_size': torch.tensor(
+                        [[frame.shape[0] // self._resize_ratio, frame.shape[1] // self._resize_ratio]], dtype=torch.long,
+                        device=self._device),
+                    'original_size': torch.tensor([frame.shape[:2]], dtype=torch.long, device=self._device)
                 },
                 'image': {'image': self.transform_fn(frame)},
                 'image_clip_ids': torch.tensor([[0]], dtype=torch.long, device=self._device),

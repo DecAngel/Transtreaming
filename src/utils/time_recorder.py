@@ -1,38 +1,49 @@
-import sys
-import os
+import contextlib
 import time
-from typing import Optional, TextIO
+from typing import Literal
 from collections import defaultdict
 
 import numpy as np
 
+from .pylogger import RankedLogger
+
+log = RankedLogger(__name__, rank_zero_only=True)
+
 
 class TimeRecorder:
-    def __init__(self, description: str = 'TimeRecorder', mode: str = 'sum', file: Optional[TextIO] = sys.stdout):
+    def __init__(self, description: str = 'TimeRecorder', mode: Literal['sum', 'avg'] = 'sum'):
         self.description = description
         assert mode in ['sum', 'avg']
         self.reduce_fn = np.sum if mode == 'sum' else np.mean
-        self.file = file if file is not None else open(os.devnull, 'w')
-        self.restart()
+        self.time_start = {}
+        self.time_record = defaultdict(list)
 
     def __enter__(self):
-        self.restart()
+        self.record_start(f'{self.description} total time')
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.record(f'{self.description} exit')
+        self.record_end(f'{self.description} total time')
         self.print()
 
     def __str__(self):
-        return f'{self.description} total time: {round(self.last_time - self.start_time, 4)}s\n\t' + \
-               '\t'.join([f'{k}: {np.round(self.reduce_fn(v), 4).item()}s, {len(v)} times\n' for k, v in self.t.items()])
+        return f'{self.description}\n\t' + '\t'.join([
+            f'{k}: {np.round(self.reduce_fn(v), 4).item()}s, {len(v)} times\n'
+            for k, v in self.time_record.items()
+        ])
+
+    def record_start(self, tag: str):
+        self.time_start[tag] = time.perf_counter()
+
+    def record_end(self, tag: str):
+        self.time_record[tag].append(time.perf_counter() - self.time_start[tag])
 
     def restart(self):
-        self.start_time = time.perf_counter()
-        self.last_time = self.start_time
-        self.t = defaultdict(list)
+        self.time_start = {}
+        self.time_record = defaultdict(list)
 
-    def record(self, tag: Optional[str] = None) -> float:
+    @contextlib.contextmanager
+    def record(self, tag: str):
         """Record and return the time elapsed from last call with `tag`.
         If `tag` is None, the time is not recorded, just returned.
         Recorded time with the same `tag` are summed or averaged according to `mode`.
@@ -40,16 +51,14 @@ class TimeRecorder:
         :param tag: the string tag
         :return: the duration in seconds
         """
-        duration = time.perf_counter() - self.last_time
-
-        if tag is not None:
-            self.t[tag].append(duration)
-
-        self.last_time = time.perf_counter()
-        return duration
+        self.record_start(tag)
+        try:
+            yield None
+        finally:
+            self.record_end(tag)
 
     def get_res_dict(self):
-        return self.t
+        return self.time_record
 
     def print(self):
-        print(self.__str__(), file=self.file)
+        log.info(self.__str__())

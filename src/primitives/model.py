@@ -1,7 +1,7 @@
 import contextlib
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Union, Dict, Literal, Mapping, Any, List
+from typing import Optional, Tuple, Union, Dict, Literal, Mapping, Any, List, ClassVar
 
 import lightning as L
 import torch
@@ -16,7 +16,7 @@ from src.primitives.batch import (
 )
 from src.utils.pylogger import RankedLogger
 from src.utils.array_operations import slice_along
-
+from src.utils.time_recorder import TimeRecorder
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -39,9 +39,12 @@ def slice_pyramid(pyramid: PYRAMID, start: int, end: int, step: int = 1, dim: in
 
 
 class BlockMixin:
+    _trainer: ClassVar[Optional[L.Trainer]] = None
+    _time_recorder: ClassVar[Optional[TimeRecorder]] = TimeRecorder(mode='avg')
+    _time_recorder_enable: bool = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.trainer: Optional[L.Trainer] = None
 
     def freeze(self):
         if isinstance(self, nn.Module):
@@ -55,11 +58,26 @@ class BlockMixin:
 
     @property
     def fraction_epoch(self):
-        return self.trainer.global_step / self.trainer.estimated_stepping_batches
+        return self._trainer.global_step / self._trainer.estimated_stepping_batches
 
     @property
     def total_epoch(self):
-        return self.trainer.max_epochs
+        return self._trainer.max_epochs
+
+    @contextlib.contextmanager
+    def record_time(self, tag: str):
+        if self._time_recorder_enable:
+            self._time_recorder.record_start(tag)
+            try:
+                yield None
+            finally:
+                torch.cuda.synchronize()
+                self._time_recorder.record_end(tag)
+        else:
+            yield None
+
+    def print_record_time(self):
+        self._time_recorder.print()
 
 
 class BaseBackbone(BlockMixin, nn.Module):
@@ -121,7 +139,7 @@ class BaseOptim(BlockMixin):
     ): raise NotImplementedError()
 
 
-class BaseModel(L.LightningModule):
+class BaseModel(BlockMixin, L.LightningModule):
     def __init__(
             self,
             backbone: BaseBackbone,
@@ -131,6 +149,7 @@ class BaseModel(L.LightningModule):
             metric: Optional[BaseMetric] = None,
             optim: Optional[BaseOptim] = None,
             torch_compile: Optional[Literal['default', 'reduce-overhead', 'max-autotune']] = None,
+            record_interval: int = 0,
     ):
         super().__init__()
         self.backbone = backbone
@@ -139,14 +158,19 @@ class BaseModel(L.LightningModule):
         self.transform = transform
         self.metric = metric
         self.optim = optim
+        self.record_interval = record_interval
+        self.record_count = 0
         if torch_compile is not None:
-            self._forward_impl = torch.compile(
-                self.forward_impl, fullgraph=False, dynamic=True, mode=torch_compile
+            self.forward = torch.compile(
+                self.forward, fullgraph=False, dynamic=True, mode=torch_compile
+            )
+            self.inference = torch.compile(
+                self.inference, fullgraph=False, dynamic=False, mode=torch_compile
             )
 
     def setup(self, stage: str) -> None:
-        for b in filter(None, [self.backbone, self.neck, self.head, self.transform, self.metric, self.optim]):
-            b.trainer = self.trainer
+        BlockMixin._time_recorder_enable = self.record_interval == 0
+        BlockMixin._trainer = self.trainer
 
     @property
     def example_input_array(self):
@@ -236,38 +260,52 @@ class BaseModel(L.LightningModule):
             batch['buffer'] = {}
 
         # Preprocess
-        with torch.inference_mode():
-            batch = self.transform.preprocess(batch) if self.transform is not None else batch
+        with self.record_time('preprocess'):
+            with torch.inference_mode():
+                batch = self.transform.preprocess(batch) if self.transform is not None else batch
 
         # Forward
-        batch = self.backbone(batch)
-        batch = self.neck(batch)
-        batch = self.head(batch)
+        with self.record_time('backbone'):
+            batch = self.backbone(batch)
+        with self.record_time('neck'):
+            batch = self.neck(batch)
+        with self.record_time('head'):
+            batch = self.head(batch)
 
         # Postprocess
-        batch = self.transform.postprocess(batch) if self.transform is not None else batch
+        with self.record_time('postprocess'):
+            batch = self.transform.postprocess(batch) if self.transform is not None else batch
 
+        self.record_count += 1
+        if self.record_interval != 0 and self.record_count % self.record_interval == 0:
+            self.print_record_time()
+            self._time_recorder.restart()
         return batch
 
     def inference_backbone_neck(self, batch: BatchDict) -> BatchDict:
         """Get forecasted features and buffer features"""
+        batch['intermediate'] = {}
         past_clip_ids = batch['past_clip_ids']
         future_clip_ids = batch['future_clip_ids']
         B, TP = past_clip_ids.size()
         _, TF = future_clip_ids.size()
 
         # Backbone
-        batch = self.backbone(batch)
+        with self.record_time('backbone'):
+            batch = self.backbone(batch)
 
         # Concatenate
         if 'buffer' in batch:
             # append buffer to features_p and past_time_constant
-            batch['buffer']['features_p'] = concat_pyramids(
+            batch['intermediate']['features_p'] = concat_pyramids(
                 [batch['buffer']['features_p'], batch['intermediate']['features_p']],
                 dim=1
             )
+        else:
+            batch['buffer'] = {}
+
         # pad
-        TB = batch['buffer']['features_p'][0].size(1)
+        TB = batch['intermediate']['features_p'][0].size(1)
         if TB < TP:
             batch['intermediate']['features_p'] = concat_pyramids(
                 [slice_pyramid(batch['intermediate']['features_p'], dim=1, start=0, end=1)] * (TP - TB) + [batch['intermediate']['features_p']],
@@ -278,17 +316,24 @@ class BaseModel(L.LightningModule):
 
         batch['buffer']['features_p'] = batch['intermediate']['features_p']
         # Neck
-        batch = self.neck(batch)
+        with self.record_time('neck'):
+            batch = self.neck(batch)
 
         return batch
 
     def inference_head(self, batch: BatchDict) -> BatchDict:
         """Get detection"""
-        return self.head(batch)
+        with self.record_time('head'):
+            return self.head(batch)
 
     def inference(self, batch: BatchDict) -> BatchDict:
         with torch.inference_mode():
-            return self.inference_head(self.inference_backbone_neck(batch))
+            output = self.inference_head(self.inference_backbone_neck(batch))
+            self.record_count += 1
+            if self.record_interval != 0 and self.record_count % self.record_interval == 0:
+                self.print_record_time()
+                self._time_recorder.restart()
+            return output
 
     def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         batch = self(batch)
@@ -303,12 +348,12 @@ class BaseModel(L.LightningModule):
 
     def validation_step(self, batch: BatchDict, *args, **kwargs) -> BatchDict:
         batch = self(batch)
-        if not self.trainer.sanity_checking and self.metric is not None:
+        if not self._trainer.sanity_checking and self.metric is not None:
             self.metric.update(batch)
         return batch
 
     def on_validation_epoch_end(self) -> None:
-        if not self.trainer.sanity_checking and self.metric is not None:
+        if not self._trainer.sanity_checking and self.metric is not None:
             d = {f'val_{k}': v.cpu().item() for k, v in self.metric.compute().items()}
             log.info(f'Val Metric Dict: {json.dumps(d, indent=2)}')
             self.log('val_mAP', d.pop('val_mAP'), on_epoch=True, prog_bar=True)
@@ -321,12 +366,12 @@ class BaseModel(L.LightningModule):
 
     def test_step(self, batch: BatchDict, *args, **kwargs) -> BatchDict:
         batch = self(batch)
-        if not self.trainer.sanity_checking and self.metric is not None:
+        if not self._trainer.sanity_checking and self.metric is not None:
             self.metric.update(batch)
         return batch
 
     def on_test_epoch_end(self) -> None:
-        if not self.trainer.sanity_checking and self.metric is not None:
+        if not self._trainer.sanity_checking and self.metric is not None:
             d = {f'test_{k}': v.cpu().item() for k, v in self.metric.compute().items()}
             log.info(f'Test Metric Dict: {json.dumps(d, indent=2)}')
             self.log('test_mAP', d.pop('test_mAP'), on_epoch=True, prog_bar=True)

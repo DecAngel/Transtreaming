@@ -94,7 +94,9 @@ def draw_bboxes(
         probabilities: Optional[PROBABILITY] = None,
         images: Union[None, IMAGE_RAW, IMAGE] = None,
         current_size: Tuple[int, int] = (600, 960),
-        size: Tuple[int, int] = (600, 960)
+        size: Tuple[int, int] = (600, 960),
+        color_fg: Tuple[int, int, int] = (0, 255, 0),
+        color_bg: Tuple[int, int, int] = (0, 0, 0),
 ) -> List[np.ndarray]:
     coordinates, labels, probabilities = normalize_bboxes(coordinates, labels, probabilities)
     resize_ratio = (torch.tensor(size, dtype=torch.float32) / torch.tensor(current_size, dtype=torch.float32))[[1, 0, 1, 0]]
@@ -102,15 +104,15 @@ def draw_bboxes(
 
     if images is None:
         images = torch.zeros(coordinates.size(0), 3, *size, dtype=torch.uint8, device='cpu')
-    else:
+    elif torch.is_tensor(images):
         images = F.interpolate(normalize_images(images), size=size, mode='nearest')
 
-    truth = torch.tensor([0, 255, 0])
-    bg = torch.tensor([255, 255, 255])
+    color_fg = torch.tensor(color_fg, dtype=torch.uint8)
+    color_bg = torch.tensor(color_bg, dtype=torch.uint8)
     if probabilities is not None:
-        colors = (probabilities.unsqueeze(-1)*truth + (1-probabilities.unsqueeze(-1))*bg).to(dtype=torch.uint8)
+        colors = (probabilities.unsqueeze(-1)*color_fg + (1-probabilities.unsqueeze(-1))*color_bg).to(dtype=torch.uint8)
     else:
-        colors = truth
+        colors = color_fg
     img = draw_rectangle(images, coordinates, colors)
 
     return list(img.permute(0, 2, 3, 1).numpy())

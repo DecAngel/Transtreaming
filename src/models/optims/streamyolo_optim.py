@@ -61,7 +61,7 @@ class StreamYOLOOptim(BaseOptim):
 
         scheduler = StreamYOLOScheduler(
             optimizer,
-            int(self.trainer.estimated_stepping_batches / self.trainer.max_epochs)
+            int(self._trainer.estimated_stepping_batches / self._trainer.max_epochs)
         )
 
         return [optimizer], [{'scheduler': scheduler, 'interval': 'step', 'name': 'SGD_lr'}]

@@ -211,6 +211,8 @@ class TATLayer(nn.Module):
         self.shift = shift
         self.dropout = dropout
 
+        # self.learnable_query = nn.Parameter(torch.rand(1, 1, self.window_size[0]*self.window_size[1], self.hidden_channel), requires_grad=True)
+
         self.fc_in = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(c, self.hidden_channel, bias=True),
@@ -266,8 +268,11 @@ class TATLayer(nn.Module):
         features_f_in = tuple(fc_in(f) for f, fc_in in zip(features_f, self.fc_in))
 
         query, q_p = pyramid2windows(features_f_in, self.window_size, self.shift)
+        # _, N, L, C = query.size()
+        # query = self.learnable_query.expand((B, N, L, C))
         key, k_p = pyramid2windows(tuple(f[:, :-1] for f in features_p_in), self.window_size, self.shift)
         value, v_p = pyramid2windows(tuple(f[:, :-1] - f[:, -1:] for f in features_p_in), self.window_size, self.shift)
+        # value, v_p = pyramid2windows(tuple(f[:, :-1] for f in features_p_in), self.window_size, self.shift)
 
         attn = self.attn(query, key, value, position)[0]
 

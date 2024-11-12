@@ -15,6 +15,6 @@ task_name: "workload"
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
 tags: ["dev"]
 
-size: 1000
+size: 100
 ratio: 0.5
 device: 0

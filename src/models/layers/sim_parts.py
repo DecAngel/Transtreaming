@@ -247,7 +247,6 @@ class Diff(nn.Module):
     ):
         B, TP = past_clip_ids.size()
         _, TF = future_clip_ids.size()
-        assert TF == 1
 
         # weights = F.softmax(past_clip_ids[:, :-1], dim=1).reshape(B, TP - 1, 1, 1, 1)
         proj_features = tuple([
@@ -470,7 +469,7 @@ class Corr2(nn.Module):
         _, TF = future_clip_ids.size()
 
         with torch.no_grad():
-            weights = F.softmax(past_clip_ids[:, :-1], dim=1).reshape(B, TP - 1, 1, 1, 1)
+            weights = F.softmax(past_clip_ids[:, :-1], dim=1).reshape(B, TP - 1, 1, 1, 1).half()
             normalized_features = F.normalize(features[0], dim=2)
 
             # B*(TP-1), Y, X, H, W

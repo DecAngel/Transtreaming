@@ -102,32 +102,34 @@ class PAFPNBackbone(BaseBackbone):
         B, T, C, H, W = image.size()
         image = image.flatten(0, 1)
 
-        feature = self.backbone(image)
+        with self.record_time('PAFPN_darknet'):
+            feature = self.backbone(image)
         f3, f4, f5 = list(feature[f_name] for f_name in self.feature_names)
 
-        # 5 -> 4 -> 3 -> 4 -> 5
-        x = self.down_conv_5_4(f5)
-        m4 = x
-        x = F.interpolate(x, size=f4.shape[2:], mode='nearest')
-        x = torch.cat([x, f4], dim=1)
-        x = self.down_csp_4_4(x)
+        with self.record_time('PAFPN_fpn'):
+            # 5 -> 4 -> 3 -> 4 -> 5
+            x = self.down_conv_5_4(f5)
+            m4 = x
+            x = F.interpolate(x, size=f4.shape[2:], mode='nearest')
+            x = torch.cat([x, f4], dim=1)
+            x = self.down_csp_4_4(x)
 
-        x = self.down_conv_4_3(x)
-        m3 = x
-        x = F.interpolate(x, size=f3.shape[2:], mode='nearest')
-        x = torch.cat([x, f3], dim=1)
-        x = self.down_csp_3_3(x)
-        p3 = x
+            x = self.down_conv_4_3(x)
+            m3 = x
+            x = F.interpolate(x, size=f3.shape[2:], mode='nearest')
+            x = torch.cat([x, f3], dim=1)
+            x = self.down_csp_3_3(x)
+            p3 = x
 
-        x = self.up_conv_3_3(x)
-        x = torch.cat([x, m3], dim=1)
-        x = self.up_csp_3_4(x)
-        p4 = x
+            x = self.up_conv_3_3(x)
+            x = torch.cat([x, m3], dim=1)
+            x = self.up_csp_3_4(x)
+            p4 = x
 
-        x = self.up_conv_4_4(x)
-        x = torch.cat([x, m4], dim=1)
-        x = self.up_csp_4_5(x)
-        p5 = x
+            x = self.up_conv_4_4(x)
+            x = torch.cat([x, m4], dim=1)
+            x = self.up_csp_4_5(x)
+            p5 = x
 
         batch['intermediate']['features_p'] = p3.unflatten(0, (B, T)), p4.unflatten(0, (B, T)), p5.unflatten(0, (B, T))
 

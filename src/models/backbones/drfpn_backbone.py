@@ -71,9 +71,11 @@ class DRFPNBackbone(BaseBackbone):
         B, T, C, H, W = image.size()
         image = image.flatten(0, 1)
 
-        feature = self.backbone(image)
+        with self.record_time(f'DRFPN_darknet'):
+            feature = self.backbone(image)
         feature = list(feature[f_name] for f_name in self.feature_names)
-        feature = self.neck(feature)
+        with self.record_time(f'DRFPN_giraffe'):
+            feature = self.neck(feature)
 
         batch['intermediate']['features_p'] = tuple([f.unflatten(0, (B, T)) for f in feature])
         return batch

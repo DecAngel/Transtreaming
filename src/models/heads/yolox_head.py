@@ -248,12 +248,13 @@ class YOLOXHead(BaseHead):
             features = [f.flatten(0, 1) for f in features]
             gt_coordinates = gt_coordinates.flatten(0, 1)
             gt_labels = gt_labels.flatten(0, 1)
-            loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.forward_impl(
-                features, torch.cat([
-                    gt_labels.unsqueeze(-1).float(),
-                    xyxy2cxcywh(gt_coordinates),
-                ], dim=-1)
-            )
+            with self.record_time('YOLOXHead_forward'):
+                loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.forward_impl(
+                    features, torch.cat([
+                        gt_labels.unsqueeze(-1).float(),
+                        xyxy2cxcywh(gt_coordinates),
+                    ], dim=-1)
+                )
             batch['loss'] = {
                 'loss': loss,
                 'iou_loss': iou_loss,
@@ -266,8 +267,10 @@ class YOLOXHead(BaseHead):
         else:
             B, T, _, _, _ = features[0].size()
             features = [f.flatten(0, 1) for f in features]
-            pred = self.forward_impl(features)
-            pred = self.postprocess(pred)
+            with self.record_time('YOLOXHead_forward'):
+                pred = self.forward_impl(features)
+            with self.record_time('YOLOXHead_postprocess'):
+                pred = self.postprocess(pred)
             pred = torch.stack(list(clip_or_pad_along(p, 0, self.max_objs) for p in pred))
             pred_coordinates = pred[..., :4]
             pred_probabilities = pred[..., 4] * pred[..., 5]

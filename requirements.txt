@@ -27,7 +27,7 @@ sh==2.0.6; sys_platform == 'linux'      # for running bash commands in some test
 # --------- Transtreaming specific --------- #
 grpcio==1.46.0
 grpcio-tools==1.46.0
-protobuf==3.20.1
+protobuf==5.28.3
 kornia==0.7.2           # for data augmentations on gpu
 jaxtyping==0.2.22       # for typing annotation on tensors
 typeguard==3.0.2                            # type checking

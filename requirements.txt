@@ -15,7 +15,7 @@ hydra-optuna-sweeper==1.2.0
 hydra-joblib-launcher==1.2.0
 
 # --------- loggers --------- #
-tensorboard==2.11.2
+tensorboard==2.18.0
 
 # --------- others --------- #
 rootutils==1.0.7    # standardizing the project root setup

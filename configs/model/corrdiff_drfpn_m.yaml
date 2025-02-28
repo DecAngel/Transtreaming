@@ -1,0 +1,19 @@
+defaults:
+  - sim_drfpn_s
+  - _self_
+
+backbone:
+  base_depth: 2
+  base_channel: 48
+  base_neck_depth: 3
+  hidden_ratio: 1.0
+neck:
+  in_channels: [192, 384, 768]
+head:
+  in_channels: ${model.neck.in_channels}
+  mid_channel: 192
+  conf_thre: 0.01
+  nms_thre: 0.65
+  gamma: 1.0
+  ignore_thr: 0.4
+  ignore_value: 1.7

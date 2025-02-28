@@ -30,6 +30,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 torch.set_float32_matmul_precision('high')
 torch.backends.cudnn.benchmark = True
 
+
 from src.utils import (
     RankedLogger,
     extras,
@@ -134,46 +135,47 @@ def demo(cfg: DictConfig) -> None:
     next_pred = None
     visualizations = []
     with torch.inference_mode():
-        for i in range(len(demo_images)):
-            if i == 0:
-                # warm up
-                for _ in range(3):
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            for i in range(len(demo_images)):
+                if i == 0:
+                    # warm up
+                    for _ in range(3):
+                        image = image_loader(demo_images[i])
+                        batch = batch_constructor(image, index=0, buffer=buffer)
+                        batch = model.inference(batch)
+                        buffer = batch['buffer']
+                    buffer = None
+
+                if i / fps >= current_time:
+                    current_pred = next_pred
+                    start_time = time.perf_counter()
                     image = image_loader(demo_images[i])
-                    batch = batch_constructor(image, index=0, buffer=buffer)
+                    batch = batch_constructor(image, index=i, buffer=buffer)
+                    load_time = time.perf_counter() - start_time
                     batch = model.inference(batch)
+                    compute_time = time.perf_counter() - start_time - load_time
                     buffer = batch['buffer']
-                buffer = None
 
-            if i / fps >= current_time:
-                current_pred = next_pred
-                start_time = time.perf_counter()
-                image = image_loader(demo_images[i])
-                batch = batch_constructor(image, index=i, buffer=buffer)
-                load_time = time.perf_counter() - start_time
-                batch = model.inference(batch)
-                compute_time = time.perf_counter() - start_time - load_time
-                buffer = batch['buffer']
+                    current_time += time.perf_counter() - start_time
+                    current_time = max(current_time, i / fps)
+                    communication_delays.append(load_time*1000)
+                    computation_delays.append(compute_time*1000)
+                    next_pred = cv2.resize(draw_bboxes(
+                        batch['bbox_pred']['coordinate'] / 2,
+                        batch['bbox_pred']['label'],
+                        current_size=(300, 480),
+                        size=(300, 480),
+                        color_fg=(0, 0, 255),
+                    )[0], dsize=(960, 600), interpolation=cv2.INTER_NEAREST)
 
-                current_time += time.perf_counter() - start_time
-                current_time = max(current_time, i / fps)
-                communication_delays.append(load_time*1000)
-                computation_delays.append(compute_time*1000)
-                next_pred = cv2.resize(draw_bboxes(
-                    batch['bbox_pred']['coordinate'] / 2,
-                    batch['bbox_pred']['label'],
-                    current_size=(300, 480),
-                    size=(300, 480),
-                    color_fg=(0, 0, 255),
-                )[0], dsize=(960, 600), interpolation=cv2.INTER_NEAREST)
-
-            # current_pred = next_pred
-            if current_pred is None:
-                visualizations.append(image_loader(demo_images[i]))
-            else:
-                b, g, r = cv2.split(current_pred)
-                mask = cv2.bitwise_not(cv2.merge([g, g, g]))
-                image = cv2.bitwise_and(image_loader(demo_images[i]), mask)
-                visualizations.append(cv2.add(image, current_pred))
+                # current_pred = next_pred
+                if current_pred is None:
+                    visualizations.append(image_loader(demo_images[i]))
+                else:
+                    b, g, r = cv2.split(current_pred)
+                    mask = cv2.bitwise_not(cv2.merge([g, g, g]))
+                    image = cv2.bitwise_and(image_loader(demo_images[i]), mask)
+                    visualizations.append(cv2.add(image, current_pred))
 
     # display
     """

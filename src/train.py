@@ -114,6 +114,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.get("train"):
         log.info("Starting training!")
         trainer.fit(model=model, datamodule=datamodule)
+        if trainer.interrupted:
+            raise KeyboardInterrupt('Training interrupted!')
 
     train_metrics = trainer.callback_metrics
 
@@ -124,6 +126,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             log.warning("Best ckpt not found! Using current weights for testing...")
             ckpt_path = None
         trainer.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
+        if trainer.interrupted:
+            raise KeyboardInterrupt('Testing interrupted!')
         log.info(f"Best ckpt path: {ckpt_path}")
 
     test_metrics = trainer.callback_metrics

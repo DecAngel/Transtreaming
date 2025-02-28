@@ -1,0 +1,20 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /datamodule: argoverse
+  - override /model: corrdiff_drfpn_s
+  - override /sap_strategy: normal
+  - override /speed: s-101
+  - _self_
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["argoverse", "corrdiff", "drfpn", "s"]
+
+seed: 12345
+
+ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s_drfpn.pth

@@ -11,10 +11,8 @@ log = RankedLogger(__name__, rank_zero_only=True)
 
 
 class TimeRecorder:
-    def __init__(self, description: str = 'TimeRecorder', mode: Literal['sum', 'avg'] = 'sum'):
+    def __init__(self, description: str = 'TimeRecorder'):
         self.description = description
-        assert mode in ['sum', 'avg']
-        self.reduce_fn = np.sum if mode == 'sum' else np.mean
         self.time_start = {}
         self.time_record = defaultdict(list)
 
@@ -28,7 +26,11 @@ class TimeRecorder:
 
     def __str__(self):
         return f'{self.description}\n\t' + '\t'.join([
-            f'{k}: {np.round(self.reduce_fn(v), 4).item()}s, {len(v)} times\n'
+            f'{k: <20s}: '
+            f'total={np.sum(v).item():6.4f}s, '
+            f'mean={np.mean(v).item():6.4f}s, '
+            f'std={np.std(v).item():6.4f}s, '
+            f'times={len(v)}\n'
             for k, v in self.time_record.items()
         ])
 

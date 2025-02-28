@@ -33,6 +33,7 @@ class AdaptiveStrategy(BaseSAPStrategy):
         self.time_bn = np.ones((window_size,)) * 0.5
         self.time_h = np.ones((window_size,)) * 0.5
 
+
     """
     def transform_fn(self, frame: np.ndarray):
         frame = frame[::self._resize_ratio, ::self._resize_ratio, [2, 1, 0]]

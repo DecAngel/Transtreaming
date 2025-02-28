@@ -40,7 +40,7 @@ def slice_pyramid(pyramid: PYRAMID, start: int, end: int, step: int = 1, dim: in
 
 class BlockMixin:
     _trainer: ClassVar[Optional[L.Trainer]] = None
-    _time_recorder: ClassVar[Optional[TimeRecorder]] = TimeRecorder(mode='avg')
+    _time_recorder: ClassVar[Optional[TimeRecorder]] = TimeRecorder()
     _time_recorder_enable: bool = True
 
     def __init__(self, *args, **kwargs):
@@ -169,7 +169,7 @@ class BaseModel(BlockMixin, L.LightningModule):
             )
 
     def setup(self, stage: str) -> None:
-        BlockMixin._time_recorder_enable = self.record_interval == 0
+        BlockMixin._time_recorder_enable = (self.record_interval != 0)
         BlockMixin._trainer = self.trainer
 
     @property
@@ -266,7 +266,7 @@ class BaseModel(BlockMixin, L.LightningModule):
 
         # Forward
         with self.record_time('backbone'):
-            batch = self.backbone(batch)
+            batch: BatchDict = self.backbone(batch)
         with self.record_time('neck'):
             batch = self.neck(batch)
         with self.record_time('head'):

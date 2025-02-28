@@ -11,6 +11,7 @@ import spatial_correlation_sampler as scs
 
 from src.models.layers.network_blocks import BaseConv
 from src.primitives.batch import PYRAMID, TIME
+from src.primitives.model import BlockMixin
 
 
 def interpolate_features(
@@ -398,7 +399,7 @@ class Corr(nn.Module):
         with torch.no_grad():
             delta_past_clip_ids = past_clip_ids[:, 1:] - past_clip_ids[:, :-1]
 
-            normalized_features = F.normalize(features[0], dim=2)
+            normalized_features = F.normalize(features[-1], dim=2)
 
             # B*(TP-1), Y, X, H, W
             correlation = self.corr_sampler(normalized_features[:, :-1].flatten(0, 1), normalized_features[:, 1:].flatten(0, 1))
@@ -430,7 +431,7 @@ class Corr(nn.Module):
         return tuple(outputs)
 
 
-class Corr2(nn.Module):
+class Corr2(BlockMixin, nn.Module):
     def __init__(
             self,
             in_channels: Tuple[int, ...],
@@ -455,7 +456,7 @@ class Corr2(nn.Module):
             dilation_patch=1
         )
         self.corr2_convs = nn.ModuleList([
-            BaseConv(c+(2*corr_kernel+1)**2, c, ksize=1, stride=1)
+            BaseConv(c+(2*corr_patch+1)**2, c, ksize=1, stride=1)
             for c in self.in_channels
         ])
 
@@ -469,31 +470,39 @@ class Corr2(nn.Module):
         _, TF = future_clip_ids.size()
 
         with torch.no_grad():
-            weights = F.softmax(past_clip_ids[:, :-1], dim=1).reshape(B, TP - 1, 1, 1, 1).half()
-            normalized_features = F.normalize(features[0], dim=2)
+            with self.record_time('Corr2_pre'):
+                weights = F.softmax(past_clip_ids[:, :-1], dim=1).reshape(B, TP - 1, 1, 1, 1).half()
+                normalized_features = F.normalize(features[-1], dim=2)
 
-            # B*(TP-1), Y, X, H, W
-            correlation = self.corr2_sampler(normalized_features[:, :-1].flatten(0, 1), normalized_features[:, 1:].flatten(0, 1))
-            # B, TP-1, YX, H, W
-            correlation = correlation.flatten(1, 2).unflatten(0, (B, TP - 1))
-            # B, YX, H, W
-            correlation = torch.sum(correlation * weights, dim=1)
-            # B, TF, YX, H, W
-            correlations = [
-                F.interpolate(
-                    correlation,
-                    size=(f.size(-2), f.size(-1)),
-                    mode='bilinear',
-                    align_corners=True,
-                ).unsqueeze(1) * future_clip_ids.reshape(B, TF, 1, 1, 1)
-                for f in features
-            ]
+            with self.record_time('Corr2_sample'):
+                # B*(TP-1), Y, X, H, W
+                correlation = self.corr2_sampler(
+                    normalized_features[:, -1:].expand(-1, TP-1, -1, -1, -1).flatten(0, 1),
+                    normalized_features[:, :-1].flatten(0, 1)
+                )
+                # B, TP-1, YX, H, W
+                correlation = correlation.flatten(1, 2).unflatten(0, (B, TP - 1))
+                # B, YX, H, W
+                correlation = torch.sum(correlation * weights, dim=1)
+
+            with self.record_time('Corr2_interpolate'):
+                # B, TF, YX, H, W
+                correlations = [
+                    F.interpolate(
+                        correlation,
+                        size=(f.size(-2), f.size(-1)),
+                        mode='bilinear',
+                        align_corners=True,
+                    ).unsqueeze(1) * future_clip_ids.reshape(B, TF, 1, 1, 1)
+                    for f in features
+                ]
 
         outputs = []
-        for f, corr, conv in zip(features, correlations, self.corr2_convs):
-            mix = torch.cat([f[:, -1:].expand(B, TF, -1, -1, -1), corr], dim=2)
-            mix = conv(mix.flatten(0, 1)).unflatten(0, (B, TF))
-            outputs.append(mix)
+        with self.record_time('Corr2_conv'):
+            for f, corr, conv in zip(features, correlations, self.corr2_convs):
+                mix = torch.cat([f[:, -1:].expand(B, TF, -1, -1, -1), corr], dim=2)
+                mix = conv(mix.flatten(0, 1)).unflatten(0, (B, TF))
+                outputs.append(mix)
 
         return tuple(outputs)
 

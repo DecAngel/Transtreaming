@@ -8,25 +8,11 @@ backbone:
   depthwise: False
   act: "silu"
 neck:
-  _target_: src.models.necks.sim_neck.SimNeck
+  _target_: src.models.necks.corrdiff_neck.CorrDiffNeck
   in_channels: [128, 256, 512]
   in_strides: [8, 16, 32]
-  sim_stride: 1
-  sim_radius: 4
-  sim_hidden: 16
-  corr_kernel: 4
-  corr_patch: 4
-  ls_remap: True
-  ls_residue: False
-  use_sim: False
-  use_sim2: False
-  use_sim3: False
-  use_diff: True
-  use_diff2: False
-  use_ls: False
-  use_corr: False
-  use_corr2: True
-  use_enhance: False
+  corr_kernel: 1
+  corr_patch: 1
 head:
   _target_: src.models.heads.tal_head.TALHead
   num_classes: 8
@@ -81,5 +67,7 @@ optim:
   momentum: 0.9
   weight_decay: 5e-4
   batch_size: ${datamodule.batch_size}
+  neck_coef: 10.0
+  head_coef: 10.0
 torch_compile: null
 record_interval: 0

@@ -1,7 +1,6 @@
 import rootutils
-import torch
 
-rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+rootutils.setup_root(__file__, indicator="pyproject.toml", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
 # - adding project root dir to PYTHONPATH
@@ -19,5 +18,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
+import torch
+
 torch.set_float32_matmul_precision('high')
-torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.benchmark = True

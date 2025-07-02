@@ -10,4 +10,5 @@ dependencies:
   - pip==24.0
 
   - pip:
-      - -r requirements.txt
+      - -r requirements-pytorch.txt -i https://mirrors.nju.edu.cn/pytorch/whl/cu121
+      - -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple

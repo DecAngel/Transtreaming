@@ -26,6 +26,8 @@ def print_config_tree(
         "paths",
         "extras",
         "services",
+        "sap_strategy",
+        "speed",
     ),
     resolve: bool = False,
     save_to_file: bool = False,

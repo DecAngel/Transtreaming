@@ -2,12 +2,13 @@ import collections
 from typing import Dict, List, Union, Callable, Tuple
 
 import torch
-from torch._six import string_classes
 from torch.utils.data import default_collate, default_convert
-from torch.utils.data._utils.collate import np_str_obj_array_pattern
 
-from .array_operations import ArrayType
+from src.primitives.batch import PYRAMID
+# from torch._six import string_classes
+# from torch.utils.data._utils.collate import np_str_obj_array_pattern
 
+from src.utils.array_operations import ArrayType, slice_along
 
 CollectionType = Union[ArrayType, Tuple[ArrayType], List[ArrayType], Dict[str, ArrayType]]
 
@@ -30,7 +31,7 @@ class ApplyCollection:
             return elem_type(*(self(d) for d in collection))
         elif isinstance(collection, tuple):
             return [self(d) for d in collection]  # Backwards compatibility.
-        elif isinstance(collection, collections.abc.Sequence) and not isinstance(collection, string_classes):
+        elif isinstance(collection, collections.abc.Sequence) and not isinstance(collection, str):
             try:
                 return elem_type([self(d) for d in collection])
             except TypeError:
@@ -65,3 +66,20 @@ def select_collate(collection: CollectionType, batch_id: int) -> CollectionType:
 
 def to_device(collection: CollectionType, device: torch.device) -> CollectionType:
     return ApplyCollection(lambda t: t.to(device))(collection)
+
+
+def concat_pyramids(pyramids: List[PYRAMID], dim: int = 1) -> PYRAMID:
+    return tuple(
+        torch.cat([
+            p[i]
+            for p in pyramids
+        ], dim=dim)
+        for i in range(len(pyramids[0]))
+    )
+
+
+def slice_pyramid(pyramid: PYRAMID, start: int, end: int, step: int = 1, dim: int = 1) -> PYRAMID:
+    return tuple(
+        slice_along(p, dim, start, end, step)
+        for p in pyramid
+    )

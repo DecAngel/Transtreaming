@@ -12,7 +12,9 @@ import spatial_correlation_sampler as scs
 
 from src.models.layers.network_blocks import BaseConv
 from src.primitives.batch import PYRAMID, TIME, BatchDict
-from src.primitives.model import BaseNeck, concat_pyramids, BlockMixin
+from src.primitives.model import BaseNeck, BlockMixin
+from src.utils.collection_operations import concat_pyramids
+
 # from src.models.layers.sim_parts import Diff, Corr2, Sim2
 
 
@@ -165,8 +167,8 @@ class Corr(BlockMixin, nn.Module):
             with self.record_time('Corr2_sample'):
                 # B*(TP-1), Y, X, H, W
                 correlation = self.corr_sampler(
-                    normalized_features[:, 1:].flatten(0, 1),
-                    normalized_features[:, :-1].flatten(0, 1)
+                    normalized_features[:, 1:].flatten(0, 1).contiguous(),
+                    normalized_features[:, :-1].flatten(0, 1).contiguous()
                 )
                 # B, TP-1, YX, H, W
                 correlation = correlation.flatten(1, 2).unflatten(0, (B, TP - 1))

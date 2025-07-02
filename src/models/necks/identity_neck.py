@@ -1,5 +1,3 @@
-from typing import Optional
-
 from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 

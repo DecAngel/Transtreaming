@@ -1,5 +1,5 @@
 # Transtreaming Codebase
-Code for [**Transtreaming: Adaptive Delay-aware Transformer for Real-time Streaming Perception**](https://arxiv.org/abs/2409.06584)
+Code for [**Transtreaming: Adaptive Delay-aware Transformer for Real-time Streaming Perception**](https://doi.org/10.1609/aaai.v39i10.33105)
 
 Note: We are currently refactoring our work to build our streaming perception pipeline on ROS for a better simulation 
 of real-world autonomous driving scenarios(end-to-end delay adaptation).

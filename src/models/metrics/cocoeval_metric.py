@@ -16,23 +16,8 @@ from src.utils.array_operations import xyxy2xywh
 from src.utils.pylogger import RankedLogger
 
 logger = RankedLogger(__name__, rank_zero_only=True)
-
-
-coco_eval_version = ""
-try:
-    if platform.system() == 'Linux':
-        from .yolox_cocoeval import COCOeval_opt as COCOeval
-        coco_eval_version = 'Using YOLOX COCOeval.'
-    else:
-        from pycocotools.cocoeval import COCOeval
-        coco_eval_version = 'Using pycocotools COCOeval.'
-except ImportError:
-    from pycocotools.cocoeval import COCOeval
-    coco_eval_version = 'Using pycocotools COCOeval.'
-logger.info(coco_eval_version)
-
-
-coco_eval_metric_names = [
+coco_eval_fast: bool = True if platform.system() == 'Linux' else False
+coco_eval_metric_names: list[tuple[str, str]] = [
     ('Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = ', 'AP5095'),
     ('Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = ', 'AP50'),
     ('Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = ', 'AP75'),
@@ -141,11 +126,25 @@ class COCOEvalMetric(BaseMetric):
                 json.dump(outputs, open(tmp, "w"))
                 cocoDt = cocoGt.loadRes(tmp)
 
+                global coco_eval_fast
+                if coco_eval_fast:
+                    # using fast compiled version
+                    try:
+                        from .yolox_cocoeval import COCOeval_opt as COCOeval
+                        cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+                        logger.info("Using COCOeval_opt")
+                    except (ImportError, RuntimeError) as e:
+                        logger.warning("Error using COCOeval_opt, falling back to use pycocotools COCOeval", exc_info=e)
+                        coco_eval_fast = False
+                if not coco_eval_fast:
+                    # using slow version
+                    from pycocotools.cocoeval import COCOeval
+                    cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+                    logger.info("Using pycocotools COCOeval")
+
                 # eval
-                cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
                 cocoEval.evaluate()
                 cocoEval.accumulate()
-
                 cocoEval.summarize()
 
             for v, (k1, k2) in zip(cocoEval.stats, coco_eval_metric_names):

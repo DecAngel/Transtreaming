@@ -1,14 +1,13 @@
-from lightning import Callback
-import lightning as L
-from torch.optim import Optimizer
-
-
-from src.primitives.model import BaseModel
 from collections import defaultdict
 
+import lightning as L
+from lightning import Callback
+from torch.optim import Optimizer
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
+
+from src.primitives.model import BaseModel
 
 
 def plot_grad_flow(title, named_parameters):

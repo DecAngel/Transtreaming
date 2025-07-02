@@ -6,9 +6,6 @@ from lightning.pytorch.callbacks import TQDMProgressBar
 from lightning.pytorch.callbacks.progress.tqdm_progress import convert_inf, _update_n, Tqdm
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 
-from optuna.integration.pytorch_lightning import PyTorchLightningPruningCallback
-
-
 
 class NewTqdmProgressBar(TQDMProgressBar):
     def init_validation_tqdm(self) -> Tqdm:

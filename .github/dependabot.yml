@@ -4,13 +4,20 @@
 # https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
 
 version: 2
+#updates:
+#  - package-ecosystem: "pip" # See documentation for possible values
+#    directory: "/" # Location of package manifests
+#    schedule:
+#      interval: "weekly"
 updates:
-  - package-ecosystem: "pip" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "weekly"
     ignore:
-      - dependency-name: "pytorch-lightning"
+      - dependency-name: "lightning"
         update-types: ["version-update:semver-patch"]
       - dependency-name: "torchmetrics"
         update-types: ["version-update:semver-patch"]
+#      - dependency-name: "typeguard"
+#        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]

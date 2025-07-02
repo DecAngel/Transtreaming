@@ -1,7 +1,7 @@
 import contextlib
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Union, Dict, Literal, Mapping, Any, List, ClassVar
+from typing import Optional, Tuple, Union, Literal, List, ClassVar
 
 import lightning as L
 import torch
@@ -10,32 +10,13 @@ import torch.nn as nn
 from torchmetrics import Metric
 
 from src.primitives.batch import (
-    BatchDict, MetricDict, LossDict, IMAGE, PYRAMID, TIME,
-    COORDINATE, LABEL, PROBABILITY, SCALAR, BBoxDict,
-    BufferDict, SIZE, IntermediateDict
+    BatchDict, MetricDict, LossDict
 )
+from src.utils.collection_operations import concat_pyramids, slice_pyramid
 from src.utils.pylogger import RankedLogger
-from src.utils.array_operations import slice_along
 from src.utils.time_recorder import TimeRecorder
 
 log = RankedLogger(__name__, rank_zero_only=True)
-
-
-def concat_pyramids(pyramids: List[PYRAMID], dim: int = 1) -> PYRAMID:
-    return tuple(
-        torch.cat([
-            p[i]
-            for p in pyramids
-        ], dim=dim)
-        for i in range(len(pyramids[0]))
-    )
-
-
-def slice_pyramid(pyramid: PYRAMID, start: int, end: int, step: int = 1, dim: int = 1) -> PYRAMID:
-    return tuple(
-        slice_along(p, dim, start, end, step)
-        for p in pyramid
-    )
 
 
 class BlockMixin:
@@ -204,7 +185,7 @@ class BaseModel(BlockMixin, L.LightningModule):
             return None
 
     def load_from_pth(self, file_path: Union[str, Path]) -> None:
-        state_dict = torch.load(str(file_path), map_location='cpu')['model']
+        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=True)['model']
 
         # replace
         replacements = self.backbone.state_dict_replace + self.neck.state_dict_replace + self.head.state_dict_replace

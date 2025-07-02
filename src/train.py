@@ -1,3 +1,31 @@
+#
+# import rootutils
+#
+# rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+# # ------------------------------------------------------------------------------------ #
+# # the setup_root above is equivalent to:
+# # - adding project root dir to PYTHONPATH
+# #       (so you don't need to force user to install project as a package)
+# #       (necessary before importing any local modules e.g. `from src import utils`)
+# # - setting up PROJECT_ROOT environment variable
+# #       (which is used as a base for paths in "configs/paths/default.yaml")
+# #       (this way all filepaths are the same no matter where you run the code)
+# # - loading environment variables from ".env" in root dir
+# #
+# # you can remove it if you:
+# # 1. either install project as a package or move entry files to project root dir
+# # 2. set `root_dir` to "." in "configs/paths/default.yaml"
+# #
+# # more info: https://github.com/ashleve/rootutils
+# # ------------------------------------------------------------------------------------ #
+#
+#
+# import torch
+# torch.set_float32_matmul_precision('high')
+# torch.backends.cudnn.benchmark = False
+
+import initialization
+
 import json
 import time
 from pathlib import Path
@@ -5,32 +33,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
 import lightning as L
-import rootutils
-import torch
 from hydra.core.hydra_config import HydraConfig
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
-
-rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
-# ------------------------------------------------------------------------------------ #
-# the setup_root above is equivalent to:
-# - adding project root dir to PYTHONPATH
-#       (so you don't need to force user to install project as a package)
-#       (necessary before importing any local modules e.g. `from src import utils`)
-# - setting up PROJECT_ROOT environment variable
-#       (which is used as a base for paths in "configs/paths/default.yaml")
-#       (this way all filepaths are the same no matter where you run the code)
-# - loading environment variables from ".env" in root dir
-#
-# you can remove it if you:
-# 1. either install project as a package or move entry files to project root dir
-# 2. set `root_dir` to "." in "configs/paths/default.yaml"
-#
-# more info: https://github.com/ashleve/rootutils
-# ------------------------------------------------------------------------------------ #
-torch.set_float32_matmul_precision('high')
-torch.backends.cudnn.benchmark = False
 
 from src.primitives.datamodule import BaseDataModule
 from src.primitives.model import BaseModel

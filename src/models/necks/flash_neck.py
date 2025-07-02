@@ -4,10 +4,39 @@ import numpy as np
 import torch
 import torch.nn as nn
 from jaxtyping import Float
+from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 
 from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck, BlockMixin
 from src.utils.windows_operations import pyramid2windows, windows2pyramid
+
+
+class FlashNeck(BaseNeck):
+    input_frames: int = 4
+    output_frames: int = 1
+
+    def __init__(
+            self,
+            in_channels: Tuple[int, ...],
+            num_heads: int = 4,
+            window_size: Tuple[int, int] = (8, 8),
+            depth: int = 1,
+            hidden_channel: Optional[int] = None,
+            dropout: float = 0.05,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.num_heads = num_heads
+        self.window_size = window_size
+        self.depth = depth
+        self.hidden_channel = hidden_channel or in_channels[0]
+        self.dropout = dropout
+
+        flash_attn_func()
+        nn.MultiheadAttention()
+
+    def test(self, func: {__le__, __ge__}):
+        pass
 
 
 class RelativePositionalEncoding3D(nn.Module):

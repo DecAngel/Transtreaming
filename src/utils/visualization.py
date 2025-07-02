@@ -1,6 +1,4 @@
-import io
 from typing import Tuple, List, Iterable, Union, Optional
-from collections import defaultdict
 
 from kornia.utils.draw import draw_rectangle
 import cv2
@@ -9,9 +7,6 @@ import numpy as np
 import torch.nn.functional as F
 
 from src.primitives.batch import IMAGE_RAW, IMAGE, COORDINATE, LABEL, PROBABILITY, FEATURE
-
-
-feature_enhance_gamma = 0.7
 
 
 def normalize_images(
@@ -56,6 +51,7 @@ def normalize_bboxes(
 
 def normalize_features(
         features: FEATURE,
+        feature_enhance_gamma: float = 0.7,
 ) -> IMAGE_RAW:
     f = features.detach().cpu().requires_grad_(False)
     batch_dims = f.ndim - 3

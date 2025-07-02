@@ -30,7 +30,7 @@ dependencies = [
   "omegaconf~=2.3.0",
   "optuna~=2.10.1",
   "tensorboard~=2.19.0",
-  "pycocotools==2.0.7",
+  "pycocotools==2.0.10",
   "sap-toolkit~=1.0.0",
   "nuscenes-devkit~=1.1.9",
   "rootutils~=1.0.7",

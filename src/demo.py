@@ -1,58 +1,26 @@
+from initialization import root
+
 import functools
 import time
+from pathlib import Path
+from typing import  Optional
 
+import torch
 import cv2
 import hydra
 import numpy as np
-import rootutils
-import torch
-import torch.multiprocessing as mp
-from PIL import Image
 from omegaconf import DictConfig
-
-rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
-# ------------------------------------------------------------------------------------ #
-# the setup_root above is equivalent to:
-# - adding project root dir to PYTHONPATH
-#       (so you don't need to force user to install project as a package)
-#       (necessary before importing any local modules e.g. `from src import utils`)
-# - setting up PROJECT_ROOT environment variable
-#       (which is used as a base for paths in "configs/paths/default.yaml")
-#       (this way all filepaths are the same no matter where you run the code)
-# - loading environment variables from ".env" in root dir
-#
-# you can remove it if you:
-# 1. either install project as a package or move entry files to project root dir
-# 2. set `root_dir` to "." in "configs/paths/default.yaml"
-#
-# more info: https://github.com/ashleve/rootutils
-# ------------------------------------------------------------------------------------ #
-torch.set_float32_matmul_precision('high')
-torch.backends.cudnn.benchmark = True
-
-
-from src.utils import (
-    RankedLogger,
-    extras,
-    get_metric_value,
-    instantiate_callbacks,
-    instantiate_loggers,
-    log_hyperparameters,
-    task_wrapper,
-)
-
-log = RankedLogger(__name__, rank_zero_only=True)
-
-import json
-import platform
-from pathlib import Path
-from typing import Tuple, Dict, Optional
-
-import torch
 
 from src.utils.visualization import draw_images, draw_bboxes, draw_features, draw_grid_clip_id
 from src.primitives.model import BaseModel
 from src.primitives.batch import BufferDict, BatchDict
+from src.utils import (
+    RankedLogger,
+    extras,
+    task_wrapper,
+)
+
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 def load_image(filepath: Path, resize_ratio: int):
@@ -95,7 +63,7 @@ def construct_batch(
 
 @task_wrapper
 def demo(cfg: DictConfig) -> None:
-
+    log.info(f'Project root: {root}')
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: BaseModel = hydra.utils.instantiate(cfg.model)
 

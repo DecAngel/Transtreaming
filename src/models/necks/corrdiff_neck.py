@@ -10,7 +10,7 @@ from torch import nn
 from torch.nn import ModuleList
 import spatial_correlation_sampler as scs
 
-from src.models.layers.network_blocks import BaseConv
+from src.models.layers.pafpn.network_blocks import BaseConv
 from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck, BlockMixin
 from src.utils.collection_operations import concat_pyramids

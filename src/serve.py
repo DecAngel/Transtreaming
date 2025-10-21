@@ -1,34 +1,14 @@
+from initialization import root
+
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List
 
 import hydra
-import rootutils
 from omegaconf import DictConfig
-
-rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
-# ------------------------------------------------------------------------------------ #
-# the setup_root above is equivalent to:
-# - adding project root dir to PYTHONPATH
-#       (so you don't need to force user to install project as a package)
-#       (necessary before importing any local modules e.g. `from src import utils`)
-# - setting up PROJECT_ROOT environment variable
-#       (which is used as a base for paths in "configs/paths/default.yaml")
-#       (this way all filepaths are the same no matter where you run the code)
-# - loading environment variables from ".env" in root dir
-#
-# you can remove it if you:
-# 1. either install project as a package or move entry files to project root dir
-# 2. set `root_dir` to "." in "configs/paths/default.yaml"
-#
-# more info: https://github.com/ashleve/rootutils
-# ------------------------------------------------------------------------------------ #
 
 from src.utils import (
     RankedLogger,
     extras,
-    get_metric_value,
-    instantiate_callbacks,
-    instantiate_loggers,
     instantiate_services,
     task_wrapper,
 )
@@ -39,16 +19,12 @@ log = RankedLogger(__name__, rank_zero_only=True)
 
 @task_wrapper
 def serve(cfg: DictConfig):
-    """Trains the model. Can additionally evaluate on a testset, using best weights obtained during
-    training.
-
-    This method is wrapped in optional @task_wrapper decorator, that controls the behavior during
-    failure. Useful for multiruns, saving info about the crash, etc.
+    """Run services
 
     :param cfg: A DictConfig configuration composed by Hydra.
     :return: A tuple with metrics and dict with all instantiated objects.
     """
-
+    log.info(f'Project root: {root}')
     log.info("Instantiating services...")
     services: List[BaseService] = instantiate_services(cfg.get("services"))
 

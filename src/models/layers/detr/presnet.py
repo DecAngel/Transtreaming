@@ -6,8 +6,10 @@ import torch.nn.functional as F
 
 from collections import OrderedDict
 
-from src.utils.detr_utils import get_activation, FrozenBatchNorm2d
+from .detr_utils import get_activation, FrozenBatchNorm2d
 
+
+__all__ = ['PResNet']
 
 ResNet_cfg = {
     18: [2, 2, 2, 2],
@@ -233,4 +235,3 @@ class PResNet(nn.Module):
             if idx in self.return_idx:
                 outs.append(x)
         return outs
-

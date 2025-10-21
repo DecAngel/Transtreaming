@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from src.models.layers.darknet import CSPDarknet
-from src.models.layers.network_blocks import DWConv, BaseConv, CSPLayer
+from src.models.layers.pafpn.darknet import CSPDarknet
+from src.models.layers.pafpn.network_blocks import DWConv, BaseConv, CSPLayer
 from src.primitives.batch import IMAGE, PYRAMID, BatchDict
 from src.primitives.model import BaseBackbone
 

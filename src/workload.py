@@ -1,25 +1,15 @@
-import json
+from initialization import root
+
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import hydra
-import rootutils
 import torch
-from lightning import LightningDataModule, LightningModule, Trainer
-from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
-
-rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
-
-torch.set_float32_matmul_precision('high')
-torch.backends.cudnn.benchmark = True
 
 from src.utils import (
     RankedLogger,
     extras,
-    instantiate_loggers,
-    log_hyperparameters,
     task_wrapper,
 )
 
@@ -28,14 +18,12 @@ log = RankedLogger(__name__, rank_zero_only=True)
 
 @task_wrapper
 def workload(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Evaluates given checkpoint on a datamodule testset.
-
-    This method is wrapped in optional @task_wrapper decorator, that controls the behavior during
-    failure. Useful for multiruns, saving info about the crash, etc.
+    """Simulate workload on gpu
 
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Tuple[dict, dict] with metrics and dict with all instantiated objects.
     """
+    log.info(f'Project root: {root}')
 
     size = cfg.get('size', 1000)
     ratio = cfg.get('ratio', 0.5)
@@ -44,11 +32,14 @@ def workload(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     t = torch.rand(size, device=torch.device(f'cuda:{device}'))
 
     while True:
-        current_time = time.perf_counter()
-        t = torch.pow(torch.pow(t, 3), 1/3)
-        torch.cuda.synchronize()
-        elapsed_time = time.perf_counter() - current_time
-        time.sleep(elapsed_time * ratio)
+        try:
+            current_time = time.perf_counter()
+            t = torch.pow(torch.pow(t, 3), 1/3)
+            torch.cuda.synchronize()
+            elapsed_time = time.perf_counter() - current_time
+            time.sleep(elapsed_time * ratio)
+        except KeyboardInterrupt:
+            break
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="workload.yaml")
@@ -66,7 +57,7 @@ def main(cfg: DictConfig) -> None:
     except KeyboardInterrupt:
         log.warning('Ctrl+C pressed. Stopping.')
     finally:
-        return
+        pass
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import functools
 from typing import TypedDict, Tuple, Union, List
 
 import torch
@@ -9,12 +10,20 @@ IMAGE_RAW = UInt8[torch.Tensor, '*batch_time channels_rgb=3 height width']
 IMAGE = Float[torch.Tensor, '*batch_time channels_rgb=3 height width']
 FEATURE = Float[torch.Tensor, '*batch_time channels height width']
 PYRAMID = Tuple[FEATURE, ...]
+WINDOW = Tuple[Float[torch.Tensor, '*batch_windows length channels'], List[Tuple[int, ...]]]
 COORDINATE = Float[torch.Tensor, '*batch_time max_objs coords_xyxy=4']
 PROBABILITY = Float[torch.Tensor, '*batch_time max_objs']
 LABEL = Int[torch.Tensor, '*batch_time max_objs']
 TIME = Shaped[torch.Tensor, '*batch time']
 SIZE = Int[torch.Tensor, '*batch hw=2']
 SCALAR = Float[torch.Tensor, '']
+
+
+def is_pyramid(obj) -> bool:
+    return isinstance(obj, tuple) and functools.reduce(
+            bool.__and__,
+            [isinstance(o, torch.Tensor) and o.ndim == 5 for o in obj]
+    )
 
 
 class MetaDict(TypedDict):
@@ -80,8 +89,8 @@ class IntermediateDict(TypedDict, total=False):
 
     Can also include additional features
     """
-    features_p: PYRAMID
-    features_f: PYRAMID
+    features_p: PYRAMID | WINDOW
+    features_f: PYRAMID | WINDOW
     features_flow: FEATURE
 
 

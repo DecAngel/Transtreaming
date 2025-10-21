@@ -3,7 +3,7 @@ from typing import Tuple, Optional, Literal
 import torch
 from torch import nn
 
-from src.models.layers.network_blocks import BaseConv
+from src.models.layers.pafpn.network_blocks import BaseConv
 from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 

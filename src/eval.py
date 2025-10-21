@@ -1,33 +1,13 @@
+from initialization import root
+
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import hydra
-import rootutils
-import torch
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
-
-rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
-# ------------------------------------------------------------------------------------ #
-# the setup_root above is equivalent to:
-# - adding project root dir to PYTHONPATH
-#       (so you don't need to force user to install project as a package)
-#       (necessary before importing any local modules e.g. `from src import utils`)
-# - setting up PROJECT_ROOT environment variable
-#       (which is used as a base for paths in "configs/paths/default.yaml")
-#       (this way all filepaths are the same no matter where you run the code)
-# - loading environment variables from ".env" in root dir
-#
-# you can remove it if you:
-# 1. either install project as a package or move entry files to project root dir
-# 2. set `root_dir` to "." in "configs/paths/default.yaml"
-#
-# more info: https://github.com/ashleve/rootutils
-# ------------------------------------------------------------------------------------ #
-torch.set_float32_matmul_precision('high')
-torch.backends.cudnn.benchmark = True
 
 from src.utils import (
     RankedLogger,
@@ -50,7 +30,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Tuple[dict, dict] with metrics and dict with all instantiated objects.
     """
-    assert cfg.ckpt_path
+    log.info(f'Project root: {root}')
 
     log.info(f"Instantiating datamodule <{cfg.datamodule._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
@@ -77,14 +57,18 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log_hyperparameters(object_dict)
 
     # load ckpt or pth
-    path = Path(cfg.ckpt_path).resolve()
-    log.info(f"Loading model from {str(path)}")
-    if path.suffix == '.pth':
-        model.load_from_pth(str(path))
-    elif path.suffix == '.ckpt':
-        model.load_from_ckpt(str(path))
+    ckpt_path = cfg.get('ckpt_path')
+    if ckpt_path:
+        path = Path(cfg.ckpt_path).resolve()
+        log.info(f"Loading model from {str(path)}")
+        if path.suffix == '.pth':
+            model.load_from_pth(str(path))
+        elif path.suffix == '.ckpt':
+            model.load_from_ckpt(str(path))
+        else:
+            raise ValueError(f"Unsupported file type {path.suffix}")
     else:
-        raise ValueError(f"Unsupported file type {path.suffix}")
+        log.warning("No checkpoint path specified!")
 
     log.info("Starting testing!")
     trainer.test(model=model, datamodule=datamodule)

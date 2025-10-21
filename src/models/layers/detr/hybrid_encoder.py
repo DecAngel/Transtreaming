@@ -8,46 +8,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .detr_utils import get_activation
 
-def get_activation(act: str, inplace: bool = True):
-    """get activation
-    """
-    if act is None:
-        return nn.Identity()
-
-    elif isinstance(act, nn.Module):
-        return act
-
-    act = act.lower()
-
-    if act == 'silu' or act == 'swish':
-        m = nn.SiLU()
-
-    elif act == 'relu':
-        m = nn.ReLU()
-
-    elif act == 'leaky_relu':
-        m = nn.LeakyReLU()
-
-    elif act == 'silu':
-        m = nn.SiLU()
-
-    elif act == 'gelu':
-        m = nn.GELU()
-
-    elif act == 'hardsigmoid':
-        m = nn.Hardsigmoid()
-
-    else:
-        raise RuntimeError('')
-
-    if hasattr(m, 'inplace'):
-        m.inplace = inplace
-
-    return m
-
-
-# __all__ = ['HybridEncoder']
+__all__ = ['HybridEncoder']
 
 
 class ConvNormLayer(nn.Module):
@@ -173,16 +136,12 @@ class TransformerEncoderLayer(nn.Module):
     def with_pos_embed(tensor, pos_embed):
         return tensor if pos_embed is None else tensor + pos_embed
 
-    def forward(self, src, extra=None, src_mask=None, pos_embed=None) -> torch.Tensor:
+    def forward(self, src, src_mask=None, pos_embed=None) -> torch.Tensor:
         residual = src
         if self.normalize_before:
             src = self.norm1(src)
         q = k = self.with_pos_embed(src, pos_embed)
-        v = src
-        if extra is not None:
-            k = torch.cat((extra, k), dim=1)
-            v = torch.cat((extra, v), dim=1)
-        src, _ = self.self_attn(q, k, value=v, attn_mask=src_mask)
+        src, _ = self.self_attn(q, k, value=src, attn_mask=src_mask)
 
         src = residual + self.dropout1(src)
         if not self.normalize_before:
@@ -205,10 +164,10 @@ class TransformerEncoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, src, extra=None, src_mask=None, pos_embed=None) -> torch.Tensor:
+    def forward(self, src, src_mask=None, pos_embed=None) -> torch.Tensor:
         output = src
         for layer in self.layers:
-            output = layer(output, extra=extra, src_mask=src_mask, pos_embed=pos_embed)
+            output = layer(output, src_mask=src_mask, pos_embed=pos_embed)
 
         if self.norm is not None:
             output = self.norm(output)
@@ -351,7 +310,9 @@ class HybridEncoder(nn.Module):
             feat_low = proj_feats[idx - 1]
             feat_heigh = self.lateral_convs[len(self.in_channels) - 1 - idx](feat_heigh)
             inner_outs[0] = feat_heigh
-            upsample_feat = F.interpolate(feat_heigh, scale_factor=2., mode='nearest')
+            feat_low_size = feat_low.shape[-2:] # H, W
+            upsample_feat = F.interpolate(feat_heigh, size=feat_low_size, mode='nearest')
+            # upsample_feat = F.interpolate(feat_heigh, scale_factor=2., mode='nearest')
             inner_out = self.fpn_blocks[len(self.in_channels) - 1 - idx](torch.concat([upsample_feat, feat_low], dim=1))
             inner_outs.insert(0, inner_out)
 

@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from jaxtyping import Float
 from torch import nn
 
-from src.models.layers.network_blocks import BaseConv
+from src.models.layers.pafpn.network_blocks import BaseConv
 from src.primitives.batch import PYRAMID, TIME, BatchDict
 from src.primitives.model import BaseNeck
 from src.models.layers.sim_parts import Sim, Sim2, Sim3, Diff, Diff2, LS, Corr, Corr2, Enhance

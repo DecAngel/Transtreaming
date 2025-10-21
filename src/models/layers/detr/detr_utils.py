@@ -8,6 +8,10 @@ from torch import Tensor
 from torchvision.ops.boxes import box_area
 from scipy.optimize import linear_sum_assignment
 
+from src.utils.pylogger import RankedLogger
+
+logger = RankedLogger(__name__)
+
 
 def box_cxcywh_to_xyxy(x: Tensor) -> Tensor:
     x_c, y_c, w, h = x.unbind(-1)
@@ -196,6 +200,8 @@ def freeze_batch_norm2d(module: nn.Module) -> nn.Module:
             if _child is not child:
                 setattr(module, name, _child)
     return module
+
+
 def get_contrastive_denoising_training_group(targets,
                                              num_classes,
                                              num_queries,

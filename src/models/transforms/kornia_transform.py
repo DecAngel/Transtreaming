@@ -86,10 +86,12 @@ class KorniaTransform(BaseTransform):
     def transform(self, batch: BatchDict, transform_fn) -> BatchDict:
         inputs = [batch['image']['image'] / self.c255]
         data_keys = ['image']
+        num_objs = []
         for key in ('bbox', 'bbox_pred'):
             if key in batch:
                 coordinates = batch[key]['coordinate']
                 b, t, o, c = coordinates.shape
+                num_objs.append(torch.count_nonzero(torch.count_nonzero(coordinates, dim=3), dim=2))
                 coordinates = coordinates[..., [0, 1, 2, 1, 2, 3, 0, 3]].reshape(b, t, o, 4, 2)
                 inputs.append(coordinates)
                 data_keys.append('bbox')
@@ -108,8 +110,12 @@ class KorniaTransform(BaseTransform):
         batch['meta']['current_size'][:] = torch.tensor(batch['image']['image'].size()[-2:], dtype=torch.long, device=self.c255.device)
         for key in ('bbox', 'bbox_pred'):
             if key in batch:
+                num_obj = num_objs.pop(0)
                 xy_min, xy_max = torch.aminmax(outputs.pop(0), dim=-2)
                 coordinates = torch.cat([xy_min, xy_max], dim=-1)
+                for cb, nb in zip(coordinates, num_obj):
+                    for ct, nt in zip(cb, nb):
+                        ct[nt:] = 0.0
                 batch[key]['coordinate'] = coordinates
 
                 # filter bounding box

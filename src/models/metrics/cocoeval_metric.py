@@ -13,6 +13,7 @@ from pycocotools.coco import COCO
 from src.primitives.model import BaseMetric
 from src.primitives.batch import BatchDict, MetricDict
 from src.utils.array_operations import xyxy2xywh
+from src.utils.inspection import inspect
 from src.utils.pylogger import RankedLogger
 
 logger = RankedLogger(__name__, rank_zero_only=True)
@@ -95,7 +96,7 @@ class COCOEvalMetric(BaseMetric):
             raise ValueError('Trainer not in validating or testing mode.')
 
         # construct outputs
-        res = {}
+        res: MetricDict = {}
         for i, t in enumerate(self.future_time_constant):
             outputs = []
             ii = dim_zero_cat(getattr(self, f'image_id_list_{i}')).cpu().numpy()
@@ -105,6 +106,7 @@ class COCOEvalMetric(BaseMetric):
             n_obj = c.shape[0] // ii.shape[0]
             ii = np.repeat(ii, n_obj, axis=0)
             mask = p > 1e-5
+            logger.info(f'b: {inspect(b)}')
             for _ii, _c, _b, _p in zip(ii[mask], c[mask], b[mask], p[mask]):
                 outputs.append({
                     'image_id': _ii.item(),

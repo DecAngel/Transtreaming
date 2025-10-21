@@ -6,8 +6,8 @@ from typing import Tuple
 
 import torch
 
-from src.models.layers.giraffe_fpn_btn import GiraffeNeckV2
-from src.models.layers.darknet import CSPDarknet
+from src.models.layers.drfpn.giraffe_fpn_btn import GiraffeNeckV2
+from src.models.layers.pafpn.darknet import CSPDarknet
 from src.primitives.batch import IMAGE, PYRAMID, BatchDict
 from src.primitives.model import BaseBackbone
 

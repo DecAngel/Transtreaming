@@ -9,7 +9,7 @@ import torchvision
 
 from src.primitives.batch import BatchDict, PYRAMID, COORDINATE, LABEL, SIZE, LossDict, BBoxDict, TIME
 from src.primitives.model import BaseHead
-from src.models.layers.network_blocks import BaseConv, DWConv
+from src.models.layers.pafpn.network_blocks import BaseConv, DWConv
 from src.models.layers.iou_loss import IOUloss
 from src.utils.array_operations import xyxy2cxcywh, clip_or_pad_along
 from src.utils.pylogger import RankedLogger

@@ -13,6 +13,7 @@ from src.primitives.batch import (
     BatchDict, MetricDict, LossDict
 )
 from src.utils.collection_operations import concat_pyramids, slice_pyramid
+from src.utils.inspection import inspect
 from src.utils.pylogger import RankedLogger
 from src.utils.time_recorder import TimeRecorder
 
@@ -185,7 +186,7 @@ class BaseModel(BlockMixin, L.LightningModule):
             return None
 
     def load_from_pth(self, file_path: Union[str, Path]) -> None:
-        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=True)['model']
+        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=False)['model']
 
         # replace
         replacements = self.backbone.state_dict_replace + self.neck.state_dict_replace + self.head.state_dict_replace
@@ -241,10 +242,13 @@ class BaseModel(BlockMixin, L.LightningModule):
             batch['buffer'] = {}
 
         # Preprocess
+        # log.info(f'origin: {inspect(batch)}')
+        # log.info(f'origin_bbox: {batch["bbox"]["coordinate"][0]}')
         with self.record_time('preprocess'):
             with torch.inference_mode():
                 batch = self.transform.preprocess(batch) if self.transform is not None else batch
-
+        # log.info(f'preprocess: {inspect(batch)}')
+        # log.info(f'preprocess_bbox: {batch["bbox"]["coordinate"][0]}')
         # Forward
         with self.record_time('backbone'):
             batch: BatchDict = self.backbone(batch)
@@ -329,6 +333,7 @@ class BaseModel(BlockMixin, L.LightningModule):
 
     def validation_step(self, batch: BatchDict, *args, **kwargs) -> BatchDict:
         batch = self(batch)
+        # log.info(f'Batch: {inspect(batch)}')
         if not self._trainer.sanity_checking and self.metric is not None:
             self.metric.update(batch)
         return batch

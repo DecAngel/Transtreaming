@@ -90,3 +90,22 @@ def xyxy2xywh(coordinates: ArrayType) -> ArrayType:
     xy = coordinates[..., :2]
     wh = coordinates[..., 2:] - coordinates[..., :2]
     return np.concatenate([xy, wh], axis=-1) if isinstance(coordinates, np.ndarray) else torch.cat([xy, wh], dim=-1)
+
+
+def cxcywh2xyxy(coordinates: ArrayType) -> ArrayType:
+    wh2 = coordinates[..., 2:] / 2
+    x1y1 = coordinates[..., :2] - wh2
+    x2y2 = coordinates[..., :2] + wh2
+    return np.concatenate([x1y1, x2y2], axis=-1) if isinstance(coordinates, np.ndarray) else torch.cat([x1y1, x2y2], dim=-1)
+
+
+def xywh2xyxy(coordinates: ArrayType) -> ArrayType:
+    x1y1 = coordinates[..., :2]
+    x2y2 = coordinates[..., :2] + coordinates[..., 2:]
+    return np.concatenate([x1y1, x2y2], axis=-1) if isinstance(coordinates, np.ndarray) else torch.cat([x1y1, x2y2], dim=-1)
+
+
+if __name__ == '__main__':
+    array = torch.randn(100, 4)
+    print(torch.all(torch.abs(cxcywh2xyxy(xyxy2cxcywh(array)) - array) < 1e-5))
+    print(torch.all(torch.abs(xywh2xyxy(xyxy2xywh(array)) - array) < 1e-5))

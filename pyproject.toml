@@ -6,9 +6,9 @@ readme = "README.md"
 classifiers = ["Private :: Do Not Upload"]
 requires-python = ">=3.10"
 dependencies = [
-  "torch~=2.5.1",
-  "torchvision~=0.20.1",
-  "torchaudio~=2.5.1",
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+  "torchaudio>=2.5.1",
   "lightning~=2.5.1.post0",
   "torchmetrics~=1.7.3",
   "scipy~=1.15.3",
@@ -39,18 +39,41 @@ dependencies = [
   "sh~=2.2.2 ; sys_platform == 'linux'",
   "pywin32 ; sys_platform == 'win32'",
   "ninja>=1.11.1.4",
-  "flash-attn>=2.8.0.post2",
+  "spatial-correlation-sampler>=0.5.0",
+]
+
+[project.optional-dependencies]
+cpu = [
+  "torch~=2.5.1",
+  "torchvision~=0.20.1",
+  "torchaudio~=2.5.1",
+]
+cu124 = [
+  "torch~=2.5.1",
+  "torchvision~=0.20.1",
+  "torchaudio~=2.5.1",
+]
+cu128 = [
+  "torch~=2.7.0",
+  "torchvision~=0.22.0",
+  "torchaudio~=2.7.0",
 ]
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu124", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+  { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+  { index = "pytorch-cu124", extra = "cu124", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
 ]
 torchvision = [
-  { index = "pytorch-cu124", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+  { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+  { index = "pytorch-cu124", extra = "cu124", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
 ]
 torchaudio = [
-  { index = "pytorch-cu124", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+  { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+  { index = "pytorch-cu124", extra = "cu124", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cu128", extra = "cu128", marker = "sys_platform == 'linux'" },
 ]
 
 [[tool.uv.index]]
@@ -59,7 +82,29 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
 
 [[tool.uv.index]]
+name = "pytorch-cpu"
+# url = "https://download.pytorch.org/whl/cpu"
+url = "https://mirrors.nju.edu.cn/pytorch/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
 name = "pytorch-cu124"
 # url = "https://download.pytorch.org/whl/cu124"
 url = "https://mirrors.nju.edu.cn/pytorch/whl/cu124"
 explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+# url = "https://download.pytorch.org/whl/cu128"
+url = "https://mirrors.nju.edu.cn/pytorch/whl/cu128"
+explicit = true
+
+[tool.uv]
+no-build-isolation-package = ['flash-attn', 'spatial-correlation-sampler']
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu124" },
+    { extra = "cu128" },
+  ],
+]

@@ -1,6 +1,6 @@
 import rootutils
 
-rootutils.setup_root(__file__, indicator="pyproject.toml", pythonpath=True)
+root = rootutils.setup_root(__file__, indicator="pyproject.toml", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
 # - adding project root dir to PYTHONPATH

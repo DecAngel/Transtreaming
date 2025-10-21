@@ -5,9 +5,17 @@
 
 defaults:
   - override /datamodule: argoverse
-  - override /model: detr_s
+  - override /model: detr_pafpn_s
   - override /sap_strategy: normal
-  - override /speed: s-3-2-101
+  - override /speed: s-101
+  - override /callbacks:
+    - model_checkpoint
+    - early_stopping
+    - model_summary
+    - tqdm_progress_bar
+    # - ema
+    - lr_monitor
+    # - visualize_feature
   - _self_
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -18,3 +26,9 @@ tags: ["argoverse", "detr", "transtreaming", "s"]
 seed: 12345
 
 ckpt_path: null
+
+callbacks:
+  visualize_feature:
+    tag: "DETR"
+    mode: "write_image"
+    visualize_interval: 100

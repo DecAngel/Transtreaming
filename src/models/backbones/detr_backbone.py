@@ -5,6 +5,12 @@ from src.primitives.model import BaseBackbone
 
 
 class DETRBackbone(BaseBackbone):
+    state_dict_replace = [
+        ('backbone', 'backbone.presnet'),
+        ('encoder.encoder', 'backbone.hybrid_yyyyy.yyyyy'),
+        ('encoder', 'backbone.hybrid_yyyyy'),
+        ('yyyyy', 'encoder')
+    ]
     def __init__(
             self,
             presnet: PResNet,
@@ -15,7 +21,7 @@ class DETRBackbone(BaseBackbone):
         self.hybrid_encoder = hybrid_encoder
 
     def forward(self, batch: BatchDict) -> BatchDict:
-        image = batch['image']['image']
+        image = batch['image']['image'] / 255.0
         B, T, C, H, W = image.size()
         image = image.flatten(0, 1)
 

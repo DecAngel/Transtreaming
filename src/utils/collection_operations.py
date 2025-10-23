@@ -1,6 +1,7 @@
 import collections
 from typing import Dict, List, Union, Callable, Tuple
 
+import numpy as np
 import torch
 from torch.utils.data import default_collate, default_convert
 
@@ -19,7 +20,7 @@ class ApplyCollection:
 
     def __call__(self, collection: CollectionType) -> CollectionType:
         elem_type = type(collection)
-        if isinstance(collection, torch.Tensor):
+        if isinstance(collection, (torch.Tensor, np.ndarray)):
             return self.fn(collection)
         elif isinstance(collection, collections.abc.Mapping):
             try:

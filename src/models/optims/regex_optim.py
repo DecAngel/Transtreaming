@@ -6,7 +6,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
 from src.primitives.model import BaseOptim, BaseBackbone, BaseNeck, BaseHead
-from torch.optim.lr_scheduler import OneCycleLR
+
 
 class RegexOptim(BaseOptim):
     def __init__(

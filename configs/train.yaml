@@ -57,3 +57,9 @@ ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: null
+
+# convenient constant to change batch_size in datamodule
+batch_size: 8
+
+# convenient constant to change gpus
+gpus: [0]

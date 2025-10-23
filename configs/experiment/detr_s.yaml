@@ -10,10 +10,10 @@ defaults:
   - override /speed: s-101
   - override /callbacks:
     - model_checkpoint
-    - early_stopping
+    # - early_stopping
     - model_summary
     - tqdm_progress_bar
-    # - ema
+    - ema
     - lr_monitor
     # - visualize_feature
   - _self_
@@ -25,10 +25,15 @@ tags: ["argoverse", "detr", "transtreaming", "s"]
 
 seed: 12345
 
-ckpt_path: null
+ckpt_path: ${paths.weight_dir}pretrained/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth
 
-callbacks:
-  visualize_feature:
-    tag: "DETR"
-    mode: "write_image"
-    visualize_interval: 100
+trainer:
+  max_epochs: 50
+  # accumulate_grad_batches: 4
+# ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s.pth
+
+#callbacks:
+#  visualize_feature:
+#    tag: "DETR"
+#    mode: "write_image"
+#    visualize_interval: 100

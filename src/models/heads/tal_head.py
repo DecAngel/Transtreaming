@@ -180,8 +180,6 @@ class TALHead(BaseHead):
             gt_coordinates_2 = gt_coordinates[:, 1:].flatten(0, 1)
             gt_labels_1 = gt_labels[:, :-1].flatten(0, 1)
             gt_labels_2 = gt_labels[:, 1:].flatten(0, 1)
-            # logger.info(f'gt_coordinates_2: {gt_coordinates_2[0]}')
-            # logger.info(f'gt_coordinates_2: {inspect(xyxy2cxcywh(remove_pad_along(gt_coordinates_2[0], 0, 0)))}')
             with self.record_time('TAL_forward'):
                 loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.forward_impl(
                     features, (
@@ -224,7 +222,6 @@ class TALHead(BaseHead):
                 'label': pred_labels.unflatten(0, (B, T)).detach().long(),
                 'probability': pred_probabilities.unflatten(0, (B, T)).detach().float(),
             }
-            # logger.info(f'pred_coordinates: {inspect({i: pred_coordinates[..., i] for i in range(4)})}')
             return batch
 
     def forward_impl(self, xin, labels=None, imgs=None):

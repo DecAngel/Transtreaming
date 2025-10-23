@@ -23,34 +23,55 @@ head:
   ignore_thr: 0.5
   ignore_value: 1.5
 transform:
-  _target_: src.models.transforms.kornia_transform.KorniaTransform
-  train_aug:
-    -
-      _target_: kornia.augmentation.RandomHorizontalFlip
-  train_size:
-    - [496, 800]
-    - [496, 816]
-    - [512, 832]
-    - [528, 848]
-    - [528, 864]
-    - [544, 880]
-    - [560, 896]
-    - [560, 912]
-    - [576, 928]
-    - [576, 944]
-    - [592, 960]
-    - [608, 976]
-    - [608, 992]
-    - [624, 1008]
-    - [640, 1024]
-    - [640, 1040]
-    - [656, 1056]
-    - [656, 1072]
-    - [672, 1088]
-    - [688, 1104]
-    - [688, 1120]
-  eval_size: [600, 960]
-  original_size: True
+#  _target_: src.models.transforms.kornia_transform.KorniaTransform
+#  train_aug:
+#    -
+#      _target_: kornia.augmentation.RandomHorizontalFlip
+#  train_size:
+#    - [496, 800]
+#    - [496, 816]
+#    - [512, 832]
+#    - [528, 848]
+#    - [528, 864]
+#    - [544, 880]
+#    - [560, 896]
+#    - [560, 912]
+#    - [576, 928]
+#    - [576, 944]
+#    - [592, 960]
+#    - [608, 976]
+#    - [608, 992]
+#    - [624, 1008]
+#    - [640, 1024]
+#    - [640, 1040]
+#    - [656, 1056]
+#    - [656, 1072]
+#    - [672, 1088]
+#    - [688, 1104]
+#    - [688, 1120]
+#  eval_size: [600, 960]
+#  original_size: True
+  _target_: src.models.transforms.torchvision_transform.TVTransform
+  _recursive_: True
+  train_ops:
+    - _target_: torchvision.transforms.v2.RandomPhotometricDistort
+      p: 0.5
+    - _target_: torchvision.transforms.v2.RandomZoomOut
+      fill: 0
+    - _target_: src.models.transforms.torchvision_transform.RandomIoUCrop
+      p: 0.8
+    - _target_: torchvision.transforms.v2.RandomHorizontalFlip
+    - _target_: torchvision.transforms.v2.Resize
+      size: [600, 960]
+    - _target_: src.models.transforms.torchvision_transform.SanitizeBoundingBoxes
+      min_size: 1
+  train_policy:
+    name: stop_sample
+    sample: 1 # stop `ops`
+    ops: [ 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop' ]
+  eval_ops:
+    - _target_: torchvision.transforms.v2.Resize
+      size: [ 600, 960 ]
 metric:
   _target_: src.models.metrics.cocoeval_metric.COCOEvalMetric
   eval_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json

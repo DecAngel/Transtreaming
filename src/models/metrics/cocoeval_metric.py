@@ -106,7 +106,7 @@ class COCOEvalMetric(BaseMetric):
             n_obj = c.shape[0] // ii.shape[0]
             ii = np.repeat(ii, n_obj, axis=0)
             mask = p > 1e-5
-            logger.info(f'b: {inspect(b)}')
+            # logger.info(f'b: {inspect(b)}')
             for _ii, _c, _b, _p in zip(ii[mask], c[mask], b[mask], p[mask]):
                 outputs.append({
                     'image_id': _ii.item(),

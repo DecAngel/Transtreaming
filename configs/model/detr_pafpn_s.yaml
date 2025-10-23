@@ -16,7 +16,7 @@ backbone:
     in_channels: [128, 256, 512]
     feat_strides: [ 8, 16, 32 ]
     # intra
-    hidden_dim: 128
+    hidden_dim: 256
     use_encoder_idx: [ 2 ]
     num_encoder_layers: 1
     nhead: 8
@@ -27,6 +27,12 @@ backbone:
     expansion: 0.5
     depth_mult: 1
     act: 'silu'
+#backbone:
+#  _target_: src.models.backbones.pafpn_backbone.PAFPNBackbone
+#  base_depth: 1
+#  base_channel: 32
+#  depthwise: False
+#  act: "silu"
 neck:
   _target_: src.models.necks.identity_neck.IdentityNeck
 head:
@@ -35,11 +41,12 @@ head:
   transformer:
     _target_: src.models.layers.detr.rtdetrv2_decoder.RTDETRTransformerv2
     feat_channels: [ 256, 256, 256 ]
+    # feat_channels: [ 128, 256, 512 ]
     feat_strides: [ 8, 16, 32 ]
     hidden_dim: 256
     num_levels: 3
     num_layers: 3
-    num_queries: 300
+    num_queries: 100
     num_denoising: 100
     label_noise_ratio: 0.5
     box_noise_scale: 1.0 # 1.0 0.4
@@ -66,33 +73,56 @@ head:
     use_focal_loss: True
     num_top_queries: 100
 transform:
-  _target_: src.models.transforms.kornia_transform.KorniaTransform
-  train_aug:
-    - _target_: kornia.augmentation.RandomHorizontalFlip
-  train_size:
-    - [496, 800]
-    - [496, 816]
-    - [512, 832]
-    - [528, 848]
-    - [528, 864]
-    - [544, 880]
-    - [560, 896]
-    - [560, 912]
-    - [576, 928]
-    - [576, 944]
-    - [592, 960]
-    - [608, 976]
-    - [608, 992]
-    - [624, 1008]
-    - [640, 1024]
-    - [640, 1040]
-    - [656, 1056]
-    - [656, 1072]
-    - [672, 1088]
-    - [688, 1104]
-    - [688, 1120]
-  eval_size: [600, 960]
-  original_size: True
+  _target_: src.models.transforms.torchvision_transform.TVTransform
+  _recursive_: True
+  train_ops:
+    - _target_: torchvision.transforms.v2.RandomPhotometricDistort
+      p: 0.5
+    - _target_: torchvision.transforms.v2.RandomZoomOut
+      fill: 0
+    - _target_: src.models.transforms.torchvision_transform.RandomIoUCrop
+      p: 0.8
+    - _target_: torchvision.transforms.v2.RandomHorizontalFlip
+    - _target_: torchvision.transforms.v2.Resize
+      size: [600, 960]
+    - _target_: src.models.transforms.torchvision_transform.SanitizeBoundingBoxes
+      min_size: 1
+  train_policy:
+    name: stop_sample
+    sample: 100000 # stop `ops`
+    ops: [ 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop' ]
+  eval_ops:
+    - _target_: torchvision.transforms.v2.Resize
+      size: [ 600, 960 ]
+#    - _target_: src.models.transforms.torchvision_transform.SanitizeBoundingBoxes
+#      min_size: 1
+#  _target_: src.models.transforms.kornia_transform.KorniaTransform
+#  train_aug:
+#    - _target_: kornia.augmentation.RandomHorizontalFlip
+#  train_size:
+#    - [496, 800]
+#    - [496, 816]
+#    - [512, 832]
+#    - [528, 848]
+#    - [528, 864]
+#    - [544, 880]
+#    - [560, 896]
+#    - [560, 912]
+#    - [576, 928]
+#    - [576, 944]
+#    - [592, 960]
+#    - [608, 976]
+#    - [608, 992]
+#    - [624, 1008]
+#    - [640, 1024]
+#    - [640, 1040]
+#    - [656, 1056]
+#    - [656, 1072]
+#    - [672, 1088]
+#    - [688, 1104]
+#    - [688, 1120]
+#  eval_size: [600, 960]
+#  original_size: True
 metric:
   _target_: src.models.metrics.cocoeval_metric.COCOEvalMetric
   eval_coco: ${paths.data_dir}argoverse/Argoverse-HD/annotations/val.json
@@ -104,14 +134,16 @@ optim:
   partial_optimizer:
     _target_: torch.optim.AdamW
     _partial_: True
-    lr: 0.001
+    lr: 0.0001
     betas: [ 0.9, 0.999 ]
     weight_decay: 0.0001
   partial_scheduler:
     _target_: torch.optim.lr_scheduler.OneCycleLR
     _partial_: True
-    max_lr: 0.001
-    total_steps: 10000
+    max_lr: 0.0001
+    pct_start: 0.3
+    three_phase: True
+    total_steps: 250000
 #  partial_scheduler:
 #    _target_: torch.optim.lr_scheduler.MultiStepLR
 #    _partial_: True
@@ -119,7 +151,7 @@ optim:
 #    gamma: 0.1
   params:
     - params: '^(?=.*backbone)(?!.*norm).*$'
-      lr: 0.0001
+      lr: 0.00001
     - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
       weight_decay: 0.
 

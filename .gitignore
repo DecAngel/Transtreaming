@@ -161,3 +161,4 @@ configs/local/default.yaml
 /notebooks/
 /weights/
 /.run/
+uv.lock

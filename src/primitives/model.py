@@ -186,7 +186,8 @@ class BaseModel(BlockMixin, L.LightningModule):
             return None
 
     def load_from_pth(self, file_path: Union[str, Path]) -> None:
-        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=False)['model']
+        # state_dict = torch.load(str(file_path), map_location='cpu', weights_only=False)['model']
+        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=True)['ema']['module']
 
         # replace
         replacements = self.backbone.state_dict_replace + self.neck.state_dict_replace + self.head.state_dict_replace

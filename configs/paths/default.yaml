@@ -19,3 +19,6 @@ work_dir: ${hydra:runtime.cwd}
 
 # path to demo images
 demo_dir: ${paths.root_dir}/demo/
+
+# path to weights
+weight_dir: ${paths.root_dir}/weights/

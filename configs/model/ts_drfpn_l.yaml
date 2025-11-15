@@ -1,5 +1,5 @@
 defaults:
-  - aq_drfpn_s
+  - ts_drfpn_s
   - _self_
 
 backbone:

@@ -42,7 +42,6 @@ else:
 from typing import Any, Dict, List, Optional
 
 import torch
-import torch.nn as nn
 import torchvision
 import PIL.Image
 torchvision.disable_beta_transforms_warning()
@@ -220,6 +219,7 @@ class Compose(T.Compose):
             'default': self.default_forward,
             'stop_epoch': self.stop_epoch_forward,
             'stop_sample': self.stop_sample_forward,
+            'decay_sample': self.decay_sample_forward,
         }
         return forwards[name]
 
@@ -260,6 +260,30 @@ class Compose(T.Compose):
 
         return sample
 
+    def decay_sample_forward(self, *inputs: Any) -> Any:
+        sample = inputs if len(inputs) > 1 else inputs[0]
+        policy_ops = self.policy['ops']
+
+        # update ops params
+        for transform in self.transforms:
+            if type(transform).__name__ in policy_ops:
+                for k, v in policy_ops[type(transform).__name__].items():
+                    iter_list = list(v.keys())
+                    for prev_iter, next_iter in zip(iter_list[:-1], iter_list[1:]):
+                        if prev_iter <= self.global_samples < next_iter:
+                            prev_item = v[prev_iter]
+                            next_item = v[next_iter]
+                            t = type(prev_item)
+                            ratio = (self.global_samples - prev_item) / (next_item - prev_item)
+                            item = t(prev_item * (1 - ratio) + next_item * ratio)
+                            setattr(transform, k, item)
+                            break
+            sample = transform(sample)
+
+        self.global_samples += 1
+
+        return sample
+
 
 class TVTransform(BaseTransform):
     def __init__(
@@ -283,7 +307,6 @@ class TVTransform(BaseTransform):
         if 'bbox' in batch:
             h, w = batch['meta']['current_size'][0].tolist()
             b, t, s = batch['bbox']['coordinate'].shape[:3]
-            # num_objs = torch.count_nonzero(torch.count_nonzero(batch['bbox']['coordinate'], dim=3), dim=2)
             targets['boxes'] = BoundingBoxes(
                 batch['bbox']['coordinate'].flatten(0, 2),
                 format=BoundingBoxFormat.XYXY,
@@ -292,8 +315,12 @@ class TVTransform(BaseTransform):
             label_b = torch.arange(0, b, device=batch['bbox']['coordinate'].device)[:, None, None].tile([1, t, s])
             label_t = torch.arange(0, t, device=batch['bbox']['coordinate'].device)[None, :, None].tile([b, 1, s])
             label = batch['bbox']['label']
+            if 'track' in batch['bbox']:
+                track = batch['bbox']['track']
+            else:
+                track = torch.zeros_like(label)
 
-            targets['labels'] = torch.stack([label, label_b, label_t], dim=-1).flatten(0, 2)
+            targets['labels'] = torch.stack([label, track, label_b, label_t], dim=-1).flatten(0, 2)
 
         results = transform(targets)
 
@@ -305,22 +332,26 @@ class TVTransform(BaseTransform):
 
         if 'bbox' in batch:
             bbox: BoundingBoxes = results['boxes']
-            label, label_b, label_t = results['labels'].unbind(-1)
+            label, track, label_b, label_t = results['labels'].unbind(-1)
             container = defaultdict(list)
-            for b, l, lb, lt in zip(bbox, label, label_b, label_t):
-                container[(lb.item(), lt.item())].append((b, l))
+            for b, l, tr, lb, lt in zip(bbox, label, track, label_b, label_t):
+                container[(lb.item(), lt.item())].append((b, l, tr))
 
             coord_container = torch.zeros_like(batch['bbox']['coordinate'])
             label_container = torch.zeros_like(batch['bbox']['label'])
+            track_container = torch.zeros_like(batch['bbox']['label'])
             for (lb, lt), v in container.items():
                 b = torch.stack([i[0] for i in v], dim=0)
                 l = torch.stack([i[1] for i in v], dim=0)
+                tr = torch.stack([i[2] for i in v], dim=0)
                 num = b.shape[0]
                 coord_container[lb, lt, :num] = b
                 label_container[lb, lt, :num] = l
+                track_container[lb, lt, :num] = tr
 
             batch['bbox']['coordinate'] = coord_container
             batch['bbox']['label'] = label_container
+            batch['bbox']['track'] = track_container
 
         return batch
 

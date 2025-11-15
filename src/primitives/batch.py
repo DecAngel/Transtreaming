@@ -62,6 +62,8 @@ class BBoxDict(TypedDict):
     **label**: the category of the bbox
 
     **probability**: the probability of the bbox
+
+    **track**: the track id of the bbox
     """
     coordinate: COORDINATE
     label: LABEL
@@ -117,6 +119,7 @@ class BufferDict(TypedDict, total=False):
     """
     features_p: PYRAMID
     features_flow: FEATURE
+    gru: PYRAMID
 
 
 class BatchDict(TypedDict, total=False):

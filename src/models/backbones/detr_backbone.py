@@ -5,6 +5,7 @@ from src.primitives.model import BaseBackbone
 
 
 class DETRBackbone(BaseBackbone):
+    state_dict_location = ['ema', 'module']
     state_dict_replace = [
         ('backbone', 'backbone.presnet'),
         ('encoder.encoder', 'backbone.hybrid_yyyyy.yyyyy'),

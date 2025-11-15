@@ -22,4 +22,4 @@ else
 fi
 
 # 执行uv sync命令
-uv sync
+uv sync --extra=cu124

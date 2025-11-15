@@ -5,7 +5,7 @@
 
 defaults:
   - override /datamodule: argoverse
-  - override /model: detr_pafpn_s
+  - override /model: stdetr_ms
   - override /sap_strategy: normal
   - override /speed: s-101
   - override /callbacks:
@@ -21,15 +21,18 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["argoverse", "detr", "transtreaming", "s"]
+tags: ["stdetr", "ms", "base"]
 
 seed: 12345
 
-ckpt_path: ${paths.weight_dir}pretrained/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth
+ckpt_path: ${paths.weight_dir}pretrained/rtdetrv2_r34vd_120e_coco_ema.pth
+
+datamodule:
+  batch_size: 4
 
 trainer:
-  max_epochs: 50
-  # accumulate_grad_batches: 4
+  max_epochs: 20
+  # accumulate_grad_batches: 8
 # ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s.pth
 
 #callbacks:

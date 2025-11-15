@@ -33,6 +33,8 @@ import torch
 from sap_toolkit.client import EvalClient
 from sap_toolkit.generated import eval_server_pb2
 
+from src.utils.inspection import inspect
+
 
 coco_eval_metric_names = [
     ('Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = ', 'AP5095'),
@@ -309,12 +311,12 @@ class BaseSAPStrategy:
             dataset_resize_ratio: int,
             demo_input: List[np.ndarray],
     ) -> None:
-        self.past_clip_ids = self.past_clip_ids.to(model.device)
-        self.future_clip_ids = self.future_clip_ids.to(model.device)
+        self._device = model.device
+        self.past_clip_ids = self.past_clip_ids.to(self._device)
+        self.future_clip_ids = self.future_clip_ids.to(self._device)
         self._sap_factor = sap_factor
         self._resize_ratio = dataset_resize_ratio
         self._prev_frame_id = None
-        self._device = model.device
         self._recv_time.clear()
         self._proc_time.clear()
         self._send_time.clear()
@@ -344,6 +346,9 @@ class BaseSAPStrategy:
             client: SAPClient,
     ) -> None:
         raise NotImplementedError()
+
+    def close(self) -> None:
+        pass
 
 
 class SAPRunner:
@@ -409,6 +414,7 @@ class SAPRunner:
         all_recv = []
         all_proc = []
         all_send = []
+        model = model.to(dtype=torch.float16)
         with SAPServer(
                 data_dir=self.data_dir,
                 ann_file=self.ann_file,
@@ -428,6 +434,7 @@ class SAPRunner:
                     demo_input.append(np.asarray(Image.open(p)).copy())
 
                 torch.cuda.synchronize(device=model.device)
+                # log.info(f'inspect: {inspect(locals())}')
 
                 with torch.inference_mode():
                     for i, seq_id in enumerate(tqdm(seqs)):
@@ -483,3 +490,4 @@ class SAPRunner:
                 raise
             finally:
                 client.close()
+                strategy.close()

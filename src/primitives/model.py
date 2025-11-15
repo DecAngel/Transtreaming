@@ -1,7 +1,7 @@
 import contextlib
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Union, Literal, List, ClassVar
+from typing import Optional, Tuple, Union, Literal, List, ClassVar, Dict
 
 import lightning as L
 import torch
@@ -63,7 +63,9 @@ class BlockMixin:
 
 
 class BaseBackbone(BlockMixin, nn.Module):
+    state_dict_location: List[str] = ['model']
     state_dict_replace: List[Tuple[str, str]] = []
+    state_dict_remap: Dict[str, List[int]] = {}
 
     def forward(self, batch: BatchDict) -> BatchDict:
         raise NotImplementedError()
@@ -71,6 +73,7 @@ class BaseBackbone(BlockMixin, nn.Module):
 
 class BaseNeck(BlockMixin, nn.Module):
     state_dict_replace: List[Tuple[str, str]] = []
+    state_dict_remap: Dict[str, List[int]] = {}
     input_frames: int = 2
     output_frames: int = 2
 
@@ -80,6 +83,7 @@ class BaseNeck(BlockMixin, nn.Module):
 
 class BaseHead(BlockMixin, nn.Module):
     state_dict_replace: List[Tuple[str, str]] = []
+    state_dict_remap: Dict[str, List[int]] = {}
     require_prev_frame: bool = True
 
     def forward(self, batch: BatchDict) -> BatchDict:
@@ -186,8 +190,12 @@ class BaseModel(BlockMixin, L.LightningModule):
             return None
 
     def load_from_pth(self, file_path: Union[str, Path]) -> None:
-        # state_dict = torch.load(str(file_path), map_location='cpu', weights_only=False)['model']
-        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=True)['ema']['module']
+        state_dict = torch.load(str(file_path), map_location='cpu', weights_only=False)
+        for key in self.backbone.state_dict_location:
+            if key in state_dict:
+                state_dict = state_dict[key]
+            else:
+                break
 
         # replace
         replacements = self.backbone.state_dict_replace + self.neck.state_dict_replace + self.head.state_dict_replace
@@ -197,6 +205,12 @@ class BaseModel(BlockMixin, L.LightningModule):
                 k = k.replace(r1, r2)
             new_ckpt[k] = v
         state_dict = new_ckpt
+
+        # remap
+        remaps = self.backbone.state_dict_remap | self.neck.state_dict_remap | self.head.state_dict_remap
+        for k in state_dict.keys():
+            if k in remaps:
+                state_dict[k] = state_dict[k][remaps[k]]
 
         misshaped_keys = []
         ssd = self.state_dict()
@@ -220,7 +234,8 @@ class BaseModel(BlockMixin, L.LightningModule):
         self.load_state_dict(
             torch.load(
                 str(file_path),
-                map_location='cpu'
+                map_location='cpu',
+                weights_only=False,
             )['state_dict'],
             strict=strict,
         )
@@ -231,11 +246,12 @@ class BaseModel(BlockMixin, L.LightningModule):
         Image:                     image
         Buffer:     buffer
         BBox:                                       pred
-        Clip_id:    |---past_clip_ids---|  |---future_clip_ids---|
+        Clip_id:    |---image_clip_ids---|  |---bbox_clip_ids---|
+                    |---past_clip_ids---|  |---future_clip_ids---|
         """
         # Define past and future clip_ids
         batch['past_clip_ids'] = batch['image_clip_ids']
-        batch['future_clip_ids'] = batch['bbox_clip_ids'][:, (int(self.head.require_prev_frame) if self.training else 0):]
+        batch['future_clip_ids'] = batch['bbox_clip_ids'][:, (int(not self.head.require_prev_frame) if self.training else 0):]
         batch['loss'] = {}
         batch['intermediate'] = {}
         batch['metric'] = {}
@@ -314,12 +330,12 @@ class BaseModel(BlockMixin, L.LightningModule):
 
     def inference(self, batch: BatchDict) -> BatchDict:
         with torch.inference_mode():
-            output = self.inference_head(self.inference_backbone_neck(batch))
+            batch = self.inference_head(self.inference_backbone_neck(batch))
             self.record_count += 1
             if self.record_interval != 0 and self.record_count % self.record_interval == 0:
                 self.print_record_time()
                 self._time_recorder.restart()
-            return output
+            return batch
 
     def training_step(self, batch: BatchDict, *args, **kwargs) -> LossDict:
         batch = self(batch)
@@ -334,7 +350,6 @@ class BaseModel(BlockMixin, L.LightningModule):
 
     def validation_step(self, batch: BatchDict, *args, **kwargs) -> BatchDict:
         batch = self(batch)
-        # log.info(f'Batch: {inspect(batch)}')
         if not self._trainer.sanity_checking and self.metric is not None:
             self.metric.update(batch)
         return batch

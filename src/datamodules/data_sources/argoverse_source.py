@@ -82,6 +82,7 @@ class ArgoverseDataSource(BaseDataSource):
         self.image_sizes = torch.zeros(self.total_images, 2, dtype=torch.int32)
         self.gt_coordinates = torch.zeros(self.total_images, self.max_objs, 4, dtype=torch.float32)
         self.gt_labels = torch.zeros(self.total_images, self.max_objs, dtype=torch.int32)
+        self.gt_tracks = torch.zeros(self.total_images, self.max_objs, dtype=torch.int32)
         if self.cache:
             self.image_images = torch.zeros(self.total_images, 3, *self.size, dtype=torch.uint8)
             self.image_bools = torch.zeros(self.total_images, dtype=torch.bool)
@@ -100,6 +101,8 @@ class ArgoverseDataSource(BaseDataSource):
                 if len(label_ann) > 0:
                     bbox = torch.tensor([l['bbox'] for l in label_ann], dtype=torch.float32)
                     cls = torch.tensor([class_ids.index(l['category_id']) for l in label_ann], dtype=torch.int32)
+                    track = torch.tensor([l['track'] for l in label_ann])
+                    # xywh to xyxy
                     bbox[:, 2:] += bbox[:, :2]
 
                     # clip bbox & filter small bbox
@@ -111,11 +114,13 @@ class ArgoverseDataSource(BaseDataSource):
 
                     bbox = bbox[mask]
                     cls = cls[mask]
+                    track = track[mask]
                     length = bbox.size(0)
                     self.gt_coordinates[image_id_0, :length] = bbox
                     self.gt_labels[image_id_0, :length] = cls
+                    self.gt_tracks[image_id_0, :length] = track
 
-        logger.info(f'Successfully built indices for Argoverse dataset.')
+        logger.info(f'Successfully built indices for Argoverse dataset. Total length: {len(self)}')
 
     @property
     def coco(self):
@@ -163,6 +168,7 @@ class ArgoverseDataSource(BaseDataSource):
             coordinate=self.gt_coordinates[image_id_0]*ratio,
             label=self.gt_labels[image_id_0],
             probability=torch.ones(self.max_objs, dtype=torch.float32),
+            track=self.gt_tracks[image_id_0],
         )
 
     def get_length(self) -> List[int]:

@@ -18,7 +18,22 @@ root = rootutils.setup_root(__file__, indicator="pyproject.toml", pythonpath=Tru
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
+
 import torch
 
 torch.set_float32_matmul_precision('high')
 torch.backends.cudnn.benchmark = True
+
+
+import math
+import functools
+from omegaconf import OmegaConf
+
+OmegaConf.register_new_resolver("add", lambda *args: type(args[0])(sum(float(a) for a in args)))
+OmegaConf.register_new_resolver("multiply", lambda *args: functools.reduce(lambda a, b: type(a)(float(a) * float(b)), args))
+OmegaConf.register_new_resolver("subtract", lambda a, b: type(a)(float(a) - float(b)))
+OmegaConf.register_new_resolver("divide", lambda a, b: type(a)(float(a) / float(b)))
+OmegaConf.register_new_resolver("round", lambda a: int(round(a)))
+OmegaConf.register_new_resolver("ceil", lambda a: int(math.ceil(a)))
+OmegaConf.register_new_resolver("floor", lambda a: int(math.floor(a)))
+OmegaConf.register_new_resolver("join", lambda a, b: str(b).join([str(i) for i in a]))

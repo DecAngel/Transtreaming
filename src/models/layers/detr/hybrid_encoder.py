@@ -7,8 +7,14 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from numpy import dtype
 
 from .detr_utils import get_activation
+from src.utils.inspection import inspect
+from src.utils.pylogger import RankedLogger
+
+logger = RankedLogger(__name__, rank_zero_only=True)
+
 
 __all__ = ['HybridEncoder']
 
@@ -137,6 +143,8 @@ class TransformerEncoderLayer(nn.Module):
         return tensor if pos_embed is None else tensor + pos_embed
 
     def forward(self, src, src_mask=None, pos_embed=None) -> torch.Tensor:
+        if pos_embed is not None:
+            pos_embed = pos_embed.to(dtype=src.dtype)
         residual = src
         if self.normalize_before:
             src = self.norm1(src)

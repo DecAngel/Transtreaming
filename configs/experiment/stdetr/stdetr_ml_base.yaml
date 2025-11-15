@@ -1,0 +1,42 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /datamodule: argoverse
+  - override /model: stdetr_ml
+  - override /sap_strategy: normal
+  - override /speed: s-101
+  - override /callbacks:
+    - model_checkpoint
+    # - early_stopping
+    - model_summary
+    - tqdm_progress_bar
+    - ema
+    - lr_monitor
+    # - visualize_feature
+  - _self_
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["stdetr", "ml", "base", "dev"]
+
+seed: 12345
+
+ckpt_path: ${paths.weight_dir}pretrained/rtdetrv2_r50vd_m_7x_coco_ema.pth
+
+datamodule:
+  batch_size: 4
+
+trainer:
+  max_epochs: 20
+  # accumulate_grad_batches: 8
+# ckpt_path: ${paths.root_dir}/weights/pretrained/yolox_s.pth
+
+#callbacks:
+#  visualize_feature:
+#    tag: "DETR"
+#    mode: "write_image"
+#    visualize_interval: 100

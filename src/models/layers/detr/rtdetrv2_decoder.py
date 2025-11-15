@@ -537,6 +537,7 @@ class RTDETRTransformerv2(nn.Module):
 
         elif self.query_select_method == 'agnostic':
             _, topk_ind = torch.topk(outputs_logits.squeeze(-1), topk, dim=-1)
+            _, topk_ind = torch.topk(outputs_logits.squeeze(-1), topk, dim=-1)
 
         topk_ind: torch.Tensor
 

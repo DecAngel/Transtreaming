@@ -62,7 +62,7 @@ def inspect(obj, indent_level=0, prefix=None) -> str:
     # 处理PyTorch Tensor
     elif isinstance(obj, torch.Tensor):
         if obj.numel() > 0:
-            if obj.size(-1) == 4:
+            if obj.ndim > 0 and obj.size(-1) == 4:
                 # A bbox tensor
                 min_val = [f'{obj[..., i].min().item():.1e}' for i in range(4)]
                 max_val = [f'{obj[..., i].max().item():.1e}' for i in range(4)]
@@ -80,7 +80,7 @@ def inspect(obj, indent_level=0, prefix=None) -> str:
     # 处理NumPy数组
     elif isinstance(obj, np.ndarray):
         if obj.size > 0:
-            if obj.shape[-1] == 4:
+            if obj.ndim > 0 and obj.shape[-1] == 4:
                 # A bbox ndarray
                 min_val = [f'{np.min(obj[..., i]):.1e}' for i in range(4)]
                 max_val = [f'{np.max(obj[..., i]):.1e}' for i in range(4)]

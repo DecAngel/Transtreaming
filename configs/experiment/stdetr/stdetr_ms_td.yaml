@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - stdetr/stdetr_ms_base
+  - override /speed: s-3-2-101
+  - _self_
+
+tags: ["stdetr", "ms", "td", "s-3-2-101", 'gru']
+
+seed: 12345
+
+model:
+  neck:
+    _target_: src.models.necks.td_neck.TemporalDifferenceNeck
+    in_channels: [ 256, 256, 256 ]
+    type_difference: gru

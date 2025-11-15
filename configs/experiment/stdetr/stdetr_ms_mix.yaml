@@ -1,0 +1,25 @@
+# @package _global_
+
+defaults:
+  - stdetr/stdetr_ms_base
+  - override /speed: s-8-4-2-101248
+  - _self_
+
+tags: ["stdetr", "ms", "mix", "s-8-4-2-101248", "gru"]
+
+seed: 12345
+
+model:
+  neck:
+    _target_: src.models.necks.td_neck.TemporalDifferenceNeck
+    in_channels: [ 256, 256, 256 ]
+    type_difference: gru
+  head:
+    prev_frame: True
+    transformer:
+      type_decoder: velocity
+      type_query: default
+      type_embedding: default
+      type_offset: default
+    criterion:
+      type_dn: default

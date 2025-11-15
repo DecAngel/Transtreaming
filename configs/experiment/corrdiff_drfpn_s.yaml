@@ -13,7 +13,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["argoverse", "corrdiff", "drfpn", "s"]
+tags: ["corrdiff_drfpn_s"]
 
 seed: 12345
 

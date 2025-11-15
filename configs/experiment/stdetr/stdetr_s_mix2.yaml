@@ -1,0 +1,26 @@
+# @package _global_
+
+defaults:
+  - stdetr/stdetr_s_base
+  - override /speed: ds-b
+  - _self_
+
+tags: ["stdetr", "s", "mix2", "ds-b", "gru"]
+
+seed: 12345
+
+model:
+  neck:
+    _target_: src.models.necks.td_neck.TemporalDifferenceNeck
+    in_channels: [ 256, 256, 256 ]
+    type_difference: gru
+  head:
+    prev_frame: True
+    relative: True
+    transformer:
+      type_decoder: velocity
+      type_query: default
+      type_embedding: default
+      type_offset: default
+    criterion:
+      type_dn: default

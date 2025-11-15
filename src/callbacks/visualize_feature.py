@@ -125,7 +125,7 @@ class VisualizeFeature(Callback):
     ) -> None:
         self.vis_counter += 1
         if self.vis_counter % self.visualize_interval == 0 and self.visualize_train:
-            start = int(pl_module.head.require_prev_frame)
+            start = int(not pl_module.head.require_prev_frame)
             self.visualize(
                 past_clip_ids=batch['image_clip_ids'][0].cpu().numpy().tolist(),
                 future_clip_ids=batch['bbox_clip_ids'][0, start:].cpu().numpy().tolist(),

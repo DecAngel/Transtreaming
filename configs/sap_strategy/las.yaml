@@ -1,0 +1,3 @@
+_target_: src.sap_strategies.las.LASStrategy
+past_length: 3
+future_length: 1

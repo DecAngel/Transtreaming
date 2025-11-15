@@ -8,6 +8,7 @@ from torch import Tensor
 from torchvision.ops.boxes import box_area
 from scipy.optimize import linear_sum_assignment
 
+from src.utils.inspection import inspect
 from src.utils.pylogger import RankedLogger
 
 logger = RankedLogger(__name__)
@@ -209,6 +210,7 @@ def get_contrastive_denoising_training_group(targets,
                                              num_denoising=100,
                                              label_noise_ratio=0.5,
                                              box_noise_scale=1.0, ):
+    # logger.info(f"detr_utils: {inspect(locals())}")
     """cnd"""
     if num_denoising <= 0:
         return None, None, None, None
@@ -324,8 +326,13 @@ def generalized_box_iou(boxes1, boxes2):
     """
     # degenerate boxes gives inf / nan results
     # so do an early check
-    assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
-    assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    # instead, filter degenerate boxes
+    mask1 = ~torch.all((boxes1[:, 2:] >= boxes1[:, :2]), dim=1)
+    mask2 = ~torch.all((boxes2[:, 2:] >= boxes2[:, :2]), dim=1)
+    # assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
+    # assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    boxes1[mask1] = 0.0
+    boxes2[mask2] = 0.0
     iou, union = box_iou(boxes1, boxes2)
 
     lt = torch.min(boxes1[:, None, :2], boxes2[:, :2])
@@ -334,7 +341,7 @@ def generalized_box_iou(boxes1, boxes2):
     wh = (rb - lt).clamp(min=0)  # [N,M,2]
     area = wh[:, :, 0] * wh[:, :, 1]
 
-    return iou - (area - union) / area
+    return iou - (area - union) / (area + 1e-5)
 
 
 def is_dist_available_and_initialized():

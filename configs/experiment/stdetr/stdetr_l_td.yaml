@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - stdetr/stdetr_l_base
+  - override /speed: s-101
+  - _self_
+
+tags: ["stdetr", "l", "td", "default", "dev"]
+
+seed: 12345
+
+model:
+  neck:
+    _target_: src.models.necks.td_neck.TemporalDifferenceNeck
+    in_channels: [ 256, 256, 256 ]
+    type_difference: default

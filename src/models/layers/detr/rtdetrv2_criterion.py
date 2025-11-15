@@ -1,5 +1,6 @@
 """Copyright(c) 2023 lyuwenyu. All Rights Reserved.
 """
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -10,6 +11,11 @@ import torchvision
 import copy
 
 from .detr_utils import box_cxcywh_to_xyxy, box_iou, generalized_box_iou, get_world_size, is_dist_available_and_initialized
+from src.utils.pylogger import RankedLogger
+from src.utils.inspection import inspect
+
+
+logger = RankedLogger(__name__, rank_zero_only=True)
 
 
 class RTDETRCriterionv2(nn.Module):
@@ -29,7 +35,10 @@ class RTDETRCriterionv2(nn.Module):
                  gamma=2.0,
                  num_classes=80,
                  boxes_weight_format=None,
-                 share_matched_indices=False):
+                 share_matched_indices=False,
+
+                 type_dn: Literal["default", "shrink"] = "default",
+                 ):
         """Create the criterion.
         Parameters:
             matcher: module able to compute a matching between targets and proposals
@@ -48,6 +57,7 @@ class RTDETRCriterionv2(nn.Module):
         self.share_matched_indices = share_matched_indices
         self.alpha = alpha
         self.gamma = gamma
+        self.type_dn = type_dn
 
     def loss_labels_focal(self, outputs, targets, indices, num_boxes):
         assert 'pred_logits' in outputs
@@ -133,7 +143,7 @@ class RTDETRCriterionv2(nn.Module):
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
 
-    def forward(self, outputs, targets, **kwargs):
+    def forward(self, outputs, targets, future_time=None, **kwargs):
         """ This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
@@ -177,12 +187,17 @@ class RTDETRCriterionv2(nn.Module):
         # In case of cdn auxiliary losses. For rtdetr
         if 'dn_aux_outputs' in outputs:
             assert 'dn_meta' in outputs, ''
-            indices = self.get_cdn_matched_indices(outputs['dn_meta'], targets)
+            if self.type_dn == "shrink":
+                B, TF = future_time.size()
+                dn_targets = [t for i, t in enumerate(targets) if i % TF == 0]
+            else:
+                dn_targets = targets
+            indices = self.get_cdn_matched_indices(outputs['dn_meta'], dn_targets)
             dn_num_boxes = num_boxes * outputs['dn_meta']['dn_num_group']
             for i, aux_outputs in enumerate(outputs['dn_aux_outputs']):
                 for loss in self.losses:
-                    meta = self.get_loss_meta_info(loss, aux_outputs, targets, indices)
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, dn_num_boxes, **meta)
+                    meta = self.get_loss_meta_info(loss, aux_outputs, dn_targets, indices)
+                    l_dict = self.get_loss(loss, aux_outputs, dn_targets, indices, dn_num_boxes, **meta)
                     l_dict = {k: l_dict[k] * self.weight_dict[k] for k in l_dict if k in self.weight_dict}
                     l_dict = {k + f'_dn_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
